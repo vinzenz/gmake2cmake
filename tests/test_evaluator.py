@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from gmake2cmake.config import ConfigModel
 from gmake2cmake.diagnostics import DiagnosticCollector
+from gmake2cmake.ir.unknowns import UnknownConstructFactory
 from gmake2cmake.make import evaluator, parser
 
 
@@ -86,8 +87,11 @@ def test_ignore_paths_and_separation():
 
 def test_unsupported_function_diagnostic():
     ast = [
-        parser.VariableAssign(name="LIST", value="$(shell echo hi)", kind="simple", location=parser.SourceLocation("Makefile", 1, 1)),
+        parser.VariableAssign(
+            name="LIST", value="$(call DEFINE_RULE,$(target))", kind="simple", location=parser.SourceLocation("Makefile", 1, 1)
+        ),
     ]
     diagnostics = DiagnosticCollector()
-    evaluator.evaluate_ast(ast, evaluator.VariableEnv(), ConfigModel(), diagnostics)
-    assert any(d.code == "EVAL_UNSUPPORTED_FUNC" for d in diagnostics.diagnostics)
+    facts = evaluator.evaluate_ast(ast, evaluator.VariableEnv(), ConfigModel(), diagnostics, unknown_factory=UnknownConstructFactory())
+    assert any(d.code == "UNKNOWN_CONSTRUCT" for d in diagnostics.diagnostics)
+    assert facts.unknown_constructs and facts.unknown_constructs[0].category == "make_function"

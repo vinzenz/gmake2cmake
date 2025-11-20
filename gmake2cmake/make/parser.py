@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple
 
+from gmake2cmake.ir.unknowns import UnknownConstruct, UnknownConstructFactory
+
 
 @dataclass(frozen=True)
 class SourceLocation:
@@ -63,12 +65,15 @@ ASTNode = VariableAssign | Rule | PatternRule | IncludeStmt | Conditional | RawC
 class ParseResult:
     ast: List[ASTNode]
     diagnostics: List
+    unknown_constructs: List[UnknownConstruct]
 
 
-def parse_makefile(content: str, path: str) -> ParseResult:
+def parse_makefile(content: str, path: str, unknown_factory: UnknownConstructFactory | None = None) -> ParseResult:
     lines = content.splitlines()
     ast: List[ASTNode] = []
     diagnostics: List = []
+    unknowns: List[UnknownConstruct] = []
+    factory = unknown_factory or UnknownConstructFactory()
     index = 0
 
     while index < len(lines):
@@ -78,16 +83,16 @@ def parse_makefile(content: str, path: str) -> ParseResult:
             index += 1
             continue
         if _is_conditional_start(stripped):
-            conditional, index = _parse_conditional(lines, index, path, diagnostics)
+            conditional, index = _parse_conditional(lines, index, path, diagnostics, factory, unknowns)
             ast.append(conditional)
             index += 1
             continue
-        node, index = _parse_statement(stripped, lines, index, path, diagnostics, loc)
+        node, index = _parse_statement(stripped, lines, index, path, diagnostics, loc, factory, unknowns)
         if node is not None:
             ast.append(node)
         index += 1
 
-    return ParseResult(ast=ast, diagnostics=diagnostics)
+    return ParseResult(ast=ast, diagnostics=diagnostics, unknown_constructs=unknowns)
 
 
 def _consume_line(lines: List[str], index: int, path: str) -> Tuple[str, SourceLocation, int]:
@@ -97,11 +102,33 @@ def _consume_line(lines: List[str], index: int, path: str) -> Tuple[str, SourceL
     return stripped_comment, SourceLocation(path=path, line=start_line, column=1), end_index
 
 
-def _parse_statement(stripped: str, lines: List[str], index: int, path: str, diagnostics: List, loc: SourceLocation):
+def _parse_statement(
+    stripped: str,
+    lines: List[str],
+    index: int,
+    path: str,
+    diagnostics: List,
+    loc: SourceLocation,
+    factory: UnknownConstructFactory,
+    unknowns: List[UnknownConstruct],
+):
     if stripped.startswith("include") or stripped.startswith("-include"):
         optional = stripped.startswith("-include")
         parts = stripped.split()[1:]
         return IncludeStmt(paths=parts, optional=optional, location=loc), index
+    if any(op in stripped for op in (":=", "+=", "=")):
+        if ":=" in stripped:
+            name, value = stripped.split(":=", 1)
+            kind = "recursive"
+        elif "+=" in stripped:
+            name, value = stripped.split("+=", 1)
+            kind = "append"
+        else:
+            name, value = stripped.split("=", 1)
+            kind = "simple"
+        # Avoid confusing rule syntax containing ':' with assignment
+        if ":" not in name:
+            return VariableAssign(name=name.strip(), value=value.strip(), kind=kind, location=loc), index
     if ":" in stripped and not stripped.startswith("\t"):
         target_part, prereq_part = stripped.split(":", 1)
         targets = target_part.strip().split()
@@ -111,22 +138,25 @@ def _parse_statement(stripped: str, lines: List[str], index: int, path: str, dia
         rule_cls = PatternRule if is_pattern else Rule
         node = rule_cls(targets[0] if is_pattern else targets, prereqs if prereqs else [], commands, loc)
         return node, next_index - 1
-    if "=" in stripped:
-        name, value = stripped.split("=", 1)
-        kind = "simple"
-        if ":=" in stripped:
-            name, value = stripped.split(":=", 1)
-            kind = "recursive"
-        elif "+=" in stripped:
-            name, value = stripped.split("+=", 1)
-            kind = "append"
-        return VariableAssign(name=name.strip(), value=value.strip(), kind=kind, location=loc), index
     if stripped.startswith("\t"):
         return RawCommand(command=stripped.lstrip("\t"), location=loc), index
+    # Unknown or unsupported syntax
+    uc = factory.create(
+        category="make_syntax",
+        file=path,
+        line=loc.line,
+        column=loc.column,
+        raw_snippet=stripped,
+        normalized_form=stripped,
+        impact={"phase": "parse", "severity": "warning"},
+        suggested_action="manual_review",
+    )
+    unknowns.append(uc)
+    add_diagnostic(diagnostics, "WARN", "UNKNOWN_CONSTRUCT", f"{uc.id}: Unknown syntax", loc)
     return None, index
 
 
-def _parse_conditional(lines: List[str], start_index: int, path: str, diagnostics: List) -> tuple[Conditional, int]:
+def _parse_conditional(lines: List[str], start_index: int, path: str, diagnostics: List, factory: UnknownConstructFactory, unknowns: List[UnknownConstruct]) -> tuple[Conditional, int]:
     header, loc, index = _consume_line(lines, start_index, path)
     test = header.strip()
     true_body: List[ASTNode] = []
@@ -140,7 +170,7 @@ def _parse_conditional(lines: List[str], start_index: int, path: str, diagnostic
             index += 1
             continue
         if _is_conditional_start(stripped):
-            nested, index = _parse_conditional(lines, index, path, diagnostics)
+            nested, index = _parse_conditional(lines, index, path, diagnostics, factory, unknowns)
             (false_body if in_false else true_body).append(nested)
             index += 1
             continue
@@ -150,7 +180,7 @@ def _parse_conditional(lines: List[str], start_index: int, path: str, diagnostic
             continue
         if stripped == "endif":
             return Conditional(test=test, true_body=true_body, false_body=false_body, location=loc), index
-        node, index = _parse_statement(stripped, lines, index, path, diagnostics, line_loc)
+        node, index = _parse_statement(stripped, lines, index, path, diagnostics, line_loc, factory, unknowns)
         if node is not None:
             (false_body if in_false else true_body).append(node)
         index += 1

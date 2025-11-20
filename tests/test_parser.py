@@ -44,3 +44,13 @@ endif
     assert isinstance(cond.true_body[0], parser.VariableAssign)
     assert isinstance(cond.true_body[1], parser.Rule)
     assert cond.false_body and isinstance(cond.false_body[0], parser.Rule)
+
+
+def test_parse_unknown_syntax_records_unknown_construct():
+    content = "???\n"
+    result = parser.parse_makefile(content, "Makefile")
+    assert result.unknown_constructs
+    uc = result.unknown_constructs[0]
+    assert uc.category == "make_syntax"
+    assert uc.file == "Makefile"
+    assert any(d["code"] == "UNKNOWN_CONSTRUCT" for d in result.diagnostics)

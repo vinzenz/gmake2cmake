@@ -13,7 +13,7 @@ from gmake2cmake.cmake import emitter as cmake_emitter
 from gmake2cmake.diagnostics import DiagnosticCollector, add, exit_code, to_console
 from gmake2cmake.fs import FileSystemAdapter, LocalFS
 from gmake2cmake.ir import builder as ir_builder
-from gmake2cmake.ir.unknowns import UnknownConstruct
+from gmake2cmake.ir.unknowns import UnknownConstruct, UnknownConstructFactory
 from gmake2cmake.ir.unknowns import to_dict as unknown_to_dict
 from gmake2cmake.make import discovery, evaluator
 from gmake2cmake.make import parser as make_parser
@@ -41,6 +41,7 @@ class RunContext:
     filesystem: FileSystemAdapter
     now: Callable[[], datetime]
     unknown_constructs: list[UnknownConstruct] = field(default_factory=list)
+    unknown_factory: UnknownConstructFactory = field(default_factory=UnknownConstructFactory)
 
 
 def parse_args(argv: list[str]) -> CLIArgs:
@@ -117,10 +118,18 @@ def _default_pipeline(ctx: RunContext) -> None:
     if exit_code(ctx.diagnostics) != 0:
         return
     for content in contents:
-        parse_result = make_parser.parse_makefile(content.content, content.path)
+        parse_result = make_parser.parse_makefile(content.content, content.path, unknown_factory=ctx.unknown_factory)
         for diag in parse_result.diagnostics:
             add(ctx.diagnostics, diag["severity"], diag["code"], diag["message"], diag.get("location"))
-        facts = evaluator.evaluate_ast(parse_result.ast, evaluator.VariableEnv(), ctx.config, ctx.diagnostics)
+        if parse_result.unknown_constructs:
+            ctx.unknown_constructs.extend(parse_result.unknown_constructs)
+        facts = evaluator.evaluate_ast(
+            parse_result.ast,
+            evaluator.VariableEnv(),
+            ctx.config,
+            ctx.diagnostics,
+            unknown_factory=ctx.unknown_factory,
+        )
         ir_result = ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
         if exit_code(ctx.diagnostics) != 0 or ir_result.project is None:
             continue

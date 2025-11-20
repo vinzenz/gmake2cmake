@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from gmake2cmake.config import ConfigModel, should_ignore_path
 from gmake2cmake.diagnostics import DiagnosticCollector, add
-from gmake2cmake.ir.unknowns import UnknownConstruct
+from gmake2cmake.ir.unknowns import UnknownConstruct, UnknownConstructFactory
 from gmake2cmake.make import parser
 
 
@@ -74,8 +74,15 @@ class BuildFacts:
     unknown_constructs: List[UnknownConstruct] = field(default_factory=list)
 
 
-def evaluate_ast(nodes: List[parser.ASTNode], env: VariableEnv, config: ConfigModel, diagnostics: DiagnosticCollector) -> BuildFacts:
+def evaluate_ast(
+    nodes: List[parser.ASTNode],
+    env: VariableEnv,
+    config: ConfigModel,
+    diagnostics: DiagnosticCollector,
+    unknown_factory: UnknownConstructFactory | None = None,
+) -> BuildFacts:
     facts = BuildFacts()
+    factory = unknown_factory or UnknownConstructFactory()
     has_seen_rule = False
     global_files = {Path(name).name for name in config.global_config_files}
 
@@ -85,7 +92,7 @@ def evaluate_ast(nodes: List[parser.ASTNode], env: VariableEnv, config: ConfigMo
             if isinstance(node, parser.VariableAssign):
                 if should_ignore_path(node.location.path, config):
                     continue
-                value = expand_variables(node.value, env, node.location, diagnostics)
+                value = expand_variables(node.value, env, node.location, diagnostics, unknown_factory=factory, facts=facts)
                 if node.kind == "append":
                     env.append(node.name, value)
                 elif node.kind == "recursive":
@@ -95,25 +102,25 @@ def evaluate_ast(nodes: List[parser.ASTNode], env: VariableEnv, config: ConfigMo
                 if (not has_seen_rule) or (Path(node.location.path).name in global_files):
                     _record_global(node, value, facts)
             elif isinstance(node, parser.Conditional):
-                chosen = _evaluate_conditional(node, env, diagnostics)
+                chosen = _evaluate_conditional(node, env, diagnostics, factory, facts)
                 if chosen:
                     _process(chosen)
             elif isinstance(node, parser.Rule):
                 if _rule_ignored(node, config):
                     continue
                 has_seen_rule = True
-                facts.rules.append(expand_rule(node, env, diagnostics))
+                facts.rules.append(expand_rule(node, env, diagnostics, unknown_factory=factory, facts=facts))
             elif isinstance(node, parser.PatternRule):
                 if _rule_ignored(node, config):
                     continue
                 has_seen_rule = True
-                facts.rules.append(expand_rule(node, env, diagnostics, is_pattern=True))
+                facts.rules.append(expand_rule(node, env, diagnostics, is_pattern=True, unknown_factory=factory, facts=facts))
             elif isinstance(node, parser.RawCommand):
                 if should_ignore_path(node.location.path, config):
                     continue
                 ev_cmd = EvaluatedCommand(
                     raw=node.command,
-                    expanded=expand_variables(node.command, env, node.location, diagnostics),
+                    expanded=expand_variables(node.command, env, node.location, diagnostics, unknown_factory=factory, facts=facts),
                     location=node.location,
                 )
                 facts.custom_commands.append(
@@ -143,6 +150,8 @@ def expand_variables(
     location: parser.SourceLocation,
     diagnostics: DiagnosticCollector,
     auto_vars: Optional[Dict[str, str]] = None,
+    unknown_factory: Optional[UnknownConstructFactory] = None,
+    facts: Optional[BuildFacts] = None,
 ) -> str:
     result = ""
     i = 0
@@ -166,7 +175,12 @@ def expand_variables(
             seen.add(var_name)
             replacement, was_func = _replace_var(var_name, env, auto_vars)
             if was_func:
-                add(diagnostics, "WARN", "EVAL_UNSUPPORTED_FUNC", f"Unsupported make function {var_name} at {location.path}:{location.line}")
+                add(
+                    diagnostics,
+                    "WARN",
+                    "UNKNOWN_CONSTRUCT",
+                    f"{_register_unknown('make_function', var_name, location, unknown_factory, facts)} Unsupported make function",
+                )
             result += replacement
             i = end + 1
         else:
@@ -175,14 +189,33 @@ def expand_variables(
     return result
 
 
-def expand_rule(rule: parser.Rule | parser.PatternRule, env: VariableEnv, diagnostics: DiagnosticCollector, is_pattern: bool = False) -> EvaluatedRule:
+def expand_rule(
+    rule: parser.Rule | parser.PatternRule,
+    env: VariableEnv,
+    diagnostics: DiagnosticCollector,
+    is_pattern: bool = False,
+    unknown_factory: Optional[UnknownConstructFactory] = None,
+    facts: Optional[BuildFacts] = None,
+) -> EvaluatedRule:
     targets_raw = getattr(rule, "targets", [getattr(rule, "target_pattern", "")])
     prereqs_attr = getattr(rule, "prerequisites", getattr(rule, "prereq_patterns", []))
     targets = [expand_variables(t, env, rule.location, diagnostics) for t in targets_raw]
     prerequisites = [expand_variables(p, env, rule.location, diagnostics) for p in prereqs_attr]
     auto_vars = _auto_vars(targets, prerequisites)
     commands = [
-        EvaluatedCommand(raw=cmd, expanded=expand_variables(cmd, env, rule.location, diagnostics, auto_vars=auto_vars), location=rule.location)
+        EvaluatedCommand(
+            raw=cmd,
+            expanded=expand_variables(
+                cmd,
+                env,
+                rule.location,
+                diagnostics,
+                auto_vars=auto_vars,
+                unknown_factory=unknown_factory,
+                facts=facts,
+            ),
+            location=rule.location,
+        )
         for cmd in rule.commands
     ]
     return EvaluatedRule(targets=targets, prerequisites=prerequisites, commands=commands, is_pattern=is_pattern, location=rule.location)
@@ -285,7 +318,13 @@ def _auto_vars(targets: List[str], prerequisites: List[str]) -> Dict[str, str]:
     }
 
 
-def _evaluate_conditional(node: parser.Conditional, env: VariableEnv, diagnostics: DiagnosticCollector) -> List[parser.ASTNode]:
+def _evaluate_conditional(
+    node: parser.Conditional,
+    env: VariableEnv,
+    diagnostics: DiagnosticCollector,
+    factory: UnknownConstructFactory,
+    facts: BuildFacts,
+) -> List[parser.ASTNode]:
     test = node.test.strip()
     if test.startswith("ifeq"):
         lhs, rhs = _split_conditional_args(test[len("ifeq") :], env, diagnostics, node.location)
@@ -299,7 +338,12 @@ def _evaluate_conditional(node: parser.Conditional, env: VariableEnv, diagnostic
     if test.startswith("ifndef"):
         name = test[len("ifndef") :].strip(" ()")
         return node.false_body if env.get(name) else node.true_body
-    add(diagnostics, "WARN", "EVAL_UNSUPPORTED_FUNC", f"Unsupported conditional {test} at {node.location.path}:{node.location.line}")
+    add(
+        diagnostics,
+        "WARN",
+        "UNKNOWN_CONSTRUCT",
+        f"{_register_unknown('conditional_logic', test, node.location, factory, facts)} Unsupported conditional",
+    )
     return node.true_body
 
 
@@ -373,3 +417,28 @@ def separate_custom_commands(rules: List[EvaluatedRule]) -> Tuple[List[Evaluated
         else:
             custom_rules.append(rule)
     return build_rules, custom_rules
+
+
+def _register_unknown(
+    category: str,
+    snippet: str,
+    location: parser.SourceLocation,
+    factory: Optional[UnknownConstructFactory],
+    facts: Optional[BuildFacts],
+) -> str:
+    if factory is None or facts is None:
+        return ""
+    uc = factory.create(
+        category=category,
+        file=location.path,
+        line=location.line,
+        column=location.column,
+        raw_snippet=snippet,
+        normalized_form=snippet,
+        context={"variables_in_scope": list(facts.project_globals.vars.keys())},
+        impact={"phase": "evaluate", "severity": "warning"},
+        suggested_action="requires_mapping",
+    )
+    facts.unknown_constructs.append(uc)
+    loc_str = f"{location.path}:{location.line}"
+    return f"{uc.id} at {loc_str}:"
