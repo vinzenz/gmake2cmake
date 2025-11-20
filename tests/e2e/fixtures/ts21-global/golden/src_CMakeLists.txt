@@ -1,0 +1,2 @@
+add_executable(ts21_app)
+target_sources(ts21_app PRIVATE "src/main.c")

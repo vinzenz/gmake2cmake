@@ -1,0 +1,11 @@
+# Project global configuration
+option(WITH_SSL "Feature toggle from Make" ON)
+set(CFLAGS "-O2" CACHE STRING "Global var from Make")
+set(CPPFLAGS "-Iinclude -DGLOBAL_FEATURE" CACHE STRING "Global var from Make")
+set(WITH_SSL "1" CACHE STRING "Global var from Make")
+set(CMAKE_C_FLAGS_INIT "-O2 -Iinclude -DGLOBAL_FEATURE")
+add_library(ts21_global_options INTERFACE)
+target_include_directories(ts21_global_options INTERFACE "include")
+target_compile_definitions(ts21_global_options INTERFACE GLOBAL_FEATURE)
+target_compile_options(ts21_global_options INTERFACE -DGLOBAL_FEATURE -Iinclude -O2)
+add_library(TS21::GlobalOptions ALIAS ts21_global_options)

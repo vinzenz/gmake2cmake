@@ -1,0 +1,2 @@
+add_library(prebuilt_lib UNKNOWN IMPORTED)
+target_compile_options(prebuilt_lib INTERFACE -Wl,--as-needed)

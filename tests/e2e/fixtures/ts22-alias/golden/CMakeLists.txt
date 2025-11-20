@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(TS22 LANGUAGES c)
+add_subdirectory("app")
+add_library(ts22_libcore STATIC)
+target_sources(ts22_libcore PRIVATE "core.c")
+add_library(TS22::libcore ALIAS ts22_libcore)

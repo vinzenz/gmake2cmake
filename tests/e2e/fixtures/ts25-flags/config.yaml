@@ -1,0 +1,10 @@
+project_name: TS25
+namespace: TS25
+global_config_files:
+  - config.mk
+target_mappings:
+  libcore:
+    dest_name: corelib
+    type_override: static
+  app:
+    dest_name: appbin

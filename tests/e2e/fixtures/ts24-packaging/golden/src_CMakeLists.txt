@@ -1,0 +1,3 @@
+add_library(ts24_libpkg STATIC)
+target_sources(ts24_libpkg PRIVATE "src/pkg.c")
+add_library(TS24::libpkg ALIAS ts24_libpkg)

@@ -1,0 +1,2 @@
+CFLAGS = -O3
+CPPFLAGS = -Ishared -DSHARED_DEF

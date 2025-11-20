@@ -1,0 +1,5 @@
+add_library(TS23_iface INTERFACE)
+target_include_directories(TS23_iface INTERFACE "include")
+target_compile_definitions(TS23_iface INTERFACE IFACE_DEF)
+target_compile_options(TS23_iface INTERFACE -fPIC)
+add_library(TS23::iface ALIAS TS23_iface)

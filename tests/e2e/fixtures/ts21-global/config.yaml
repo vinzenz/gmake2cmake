@@ -1,0 +1,4 @@
+project_name: TS21
+namespace: TS21
+global_config_files:
+  - config.mk

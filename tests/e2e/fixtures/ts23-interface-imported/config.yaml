@@ -1,0 +1,13 @@
+project_name: TS23
+namespace: TS23
+target_mappings:
+  iface:
+    dest_name: TS23_iface
+    type_override: interface
+    include_dirs: ["include"]
+    defines: ["IFACE_DEF"]
+    options: ["-fPIC"]
+  prebuilt:
+    dest_name: prebuilt_lib
+    type_override: imported
+    options: ["-Wl,--as-needed"]

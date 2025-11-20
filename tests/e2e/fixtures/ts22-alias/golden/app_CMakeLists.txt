@@ -1,0 +1,3 @@
+add_executable(ts22_app)
+target_sources(ts22_app PRIVATE "app/main.c")
+target_link_libraries(ts22_app PRIVATE TS22::libcore)
