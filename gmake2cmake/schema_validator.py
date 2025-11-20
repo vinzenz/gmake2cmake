@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from gmake2cmake.constants import VALID_CONFIG_TARGET_TYPES, VALID_LINK_CLASSIFICATIONS
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.exceptions import ConfigFileError
 
@@ -157,6 +158,33 @@ def _basic_config_validation(config_data: Dict[str, Any], diagnostics: Diagnosti
             value = config_data[bool_key]
             if not isinstance(value, bool):
                 add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{bool_key} must be a boolean")
+                return False
+
+    # Validate nested fields where possible (best-effort without jsonschema)
+    if "target_mappings" in config_data and isinstance(config_data["target_mappings"], dict):
+        allowed_types = {t for t in VALID_CONFIG_TARGET_TYPES if t is not None}
+        for _, mapping in config_data["target_mappings"].items():
+            if not isinstance(mapping, dict):
+                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "target_mappings entries must be dictionaries")
+                return False
+            type_override = mapping.get("type_override")
+            if type_override is not None and type_override not in allowed_types:
+                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"Invalid type_override: {type_override}")
+                return False
+
+    if "link_overrides" in config_data and isinstance(config_data["link_overrides"], dict):
+        for _, override in config_data["link_overrides"].items():
+            if not isinstance(override, dict):
+                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "link_overrides entries must be dictionaries")
+                return False
+            classification = override.get("classification")
+            if classification is not None and classification not in VALID_LINK_CLASSIFICATIONS:
+                add(
+                    diagnostics,
+                    "ERROR",
+                    "CONFIG_SCHEMA_VALIDATION",
+                    f"Invalid classification value: {classification}",
+                )
                 return False
 
     return True
