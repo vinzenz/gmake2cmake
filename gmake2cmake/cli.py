@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -140,3 +141,8 @@ def _stdout():
     import sys
 
     return sys.stdout
+
+
+def main() -> None:
+    code = run(sys.argv[1:])
+    raise SystemExit(code)

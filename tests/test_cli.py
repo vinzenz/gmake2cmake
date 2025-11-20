@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import io
+import sys
+
+import pytest
 
 from gmake2cmake import cli
 from gmake2cmake.diagnostics import add
@@ -49,3 +52,18 @@ def test_run_handles_invalid_args(monkeypatch):
     code = cli.run(["--output-dir", ""], fs=FakeFS())
     assert code == 1
     assert "Unhandled exception" in buf.getvalue()
+
+
+def test_main_exits_with_run_code(monkeypatch):
+    called = {}
+
+    def fake_run(argv, **kwargs):
+        called["argv"] = argv
+        return 3
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["gmake2cmake", "--source-dir", "proj"])
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main()
+    assert excinfo.value.code == 3
+    assert called["argv"] == ["--source-dir", "proj"]

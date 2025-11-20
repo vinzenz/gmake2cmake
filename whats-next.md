@@ -1,2 +1,1 @@
 - Fill out IRBuilder classifications: internal vs external/imported libs using build rules, tree location, and link_overrides; attach deps from prerequisites; propagate usage requirements (PUBLIC/PRIVATE/INTERFACE) and include/defines/options; ensure aliases used in deps.
-- Wire lint (ruff) into CI and optionally add basic README/CLI usage docs; consider adding console scripts entry point in pyproject.
