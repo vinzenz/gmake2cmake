@@ -151,7 +151,12 @@ def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: Di
     return contents
 
 
-def discover(source_dir: Path, entry_makefile: Optional[str], fs: FileSystemAdapter, diagnostics: DiagnosticCollector):
+def discover(
+    source_dir: Path,
+    entry_makefile: Optional[str],
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+) -> tuple[IncludeGraph, list[MakefileContent]]:
     entry = resolve_entry(source_dir, entry_makefile, fs, diagnostics)
     if entry is None:
         return IncludeGraph(), []

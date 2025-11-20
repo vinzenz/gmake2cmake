@@ -28,7 +28,7 @@ class ConversionMetrics:
 class MarkdownReporter:
     """Generate human-readable Markdown reports from diagnostics and unknowns."""
 
-    def __init__(self, project_name: str = "Unnamed Project"):
+    def __init__(self, project_name: str = "Unnamed Project") -> None:
         """Initialize the reporter.
 
         Args:

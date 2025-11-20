@@ -164,7 +164,7 @@ def timed_block(stage_name: str) -> object:
     """
 
     class TimedBlock:
-        def __init__(self, name: str):
+        def __init__(self, name: str) -> None:
             self.name = name
             self.start_time: Optional[float] = None
 
