@@ -101,13 +101,15 @@ def build_targets(facts: BuildFacts, config: ConfigModel, diagnostics: Diagnosti
         ttype = _infer_type(artifact)
         physical_name = _physical_name(namespace, artifact)
         alias_name = f"{namespace}::{Path(artifact).stem}"
+        override = classify_library_override(Path(artifact).stem, config)
         classification = _classify_target(artifact, config)
-        if classification != "internal":
-            alias_name = None
-        sources = make_source_files(compiles)
-        compile_flags = []
-        unmapped_flags = []
+        compile_flags: List[str] = []
+        unmapped_flags: List[str] = []
+        compile_includes: List[str] = []
+        compile_defines: List[str] = []
         for c in compiles:
+            compile_includes.extend(c.includes)
+            compile_defines.extend(c.defines)
             mapped, unmapped = apply_flag_mapping(c.flags, config)
             compile_flags.extend(mapped)
             unmapped_flags.extend(unmapped)
@@ -118,22 +120,45 @@ def build_targets(facts: BuildFacts, config: ConfigModel, diagnostics: Diagnosti
             physical_name = target_mapping.dest_name
             if target_mapping.type_override:
                 ttype = target_mapping.type_override
+        if override:
+            classification = override.classification
+            if override.alias:
+                alias_name = override.alias
+            if override.classification == "imported":
+                ttype = "imported"
+                physical_name = override.imported_target or physical_name
+                compiles = []
+            elif override.classification == "external":
+                alias_name = override.alias
+        elif Path(artifact).is_absolute():
+            classification = "external"
+            alias_name = None
+        elif classification != "internal":
+            alias_name = None
+        sources = make_source_files(compiles)
+        include_dirs = sorted(set(compile_includes + (target_mapping.include_dirs if target_mapping else [])))
+        defines = sorted(set(compile_defines + (target_mapping.defines if target_mapping else [])))
+        compile_options = sorted(set(compile_flags + (target_mapping.options if target_mapping else [])))
+        final_alias = alias_name
+        if classification == "external" and not override:
+            final_alias = override.alias if override and override.alias else None
         tgt = Target(
             artifact=artifact,
             name=physical_name,
-            alias=alias_name,
+            alias=final_alias,
             type=ttype,
             sources=sources,
-            include_dirs=sorted(set(target_mapping.include_dirs)) if target_mapping else [],
-            defines=sorted(set(target_mapping.defines)) if target_mapping else [],
-            compile_options=sorted(set(compile_flags)),
+            include_dirs=include_dirs,
+            defines=defines,
+            compile_options=compile_options,
             link_options=[],
             link_libs=[],
             deps=[],
             custom_commands=[],
         )
-        if target_mapping and target_mapping.options:
-            tgt.compile_options = sorted(set(tgt.compile_options + target_mapping.options))
+        # External or imported targets should not carry sources
+        if classification in {"external", "imported"}:
+            tgt.sources = []
         artifact_map[artifact] = tgt
         targets.append(tgt)
     attach_dependencies(targets, facts.rules, artifact_map)
@@ -205,6 +230,8 @@ def _classify_target(artifact: str, config: ConfigModel) -> str:
     override = classify_library_override(stem, config)
     if override:
         return override.classification
+    if Path(artifact).is_absolute():
+        return "external"
     return "internal"
 
 

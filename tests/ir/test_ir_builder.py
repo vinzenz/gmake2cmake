@@ -106,3 +106,49 @@ def test_external_override_disables_alias():
     assert project is not None
     lib = project.targets[0]
     assert lib.alias is None
+
+
+def test_imported_override_creates_imported_target():
+    facts = evaluator.BuildFacts()
+    facts.inferred_compiles.append(
+        evaluator.InferredCompile(
+            source="src/z.c",
+            output="libz.a",
+            language="c",
+            flags=[],
+            includes=["include"],
+            defines=["ZDEF"],
+            location=parser.SourceLocation("Makefile", 1, 1),
+        )
+    )
+    cfg = ConfigModel(project_name="Demo", namespace="Demo", link_overrides={"libz": LinkOverride(classification="imported", imported_target="Zlib::Z", alias="Zlib::Z")})
+    diagnostics = DiagnosticCollector()
+    project = builder.build_project(facts, cfg, diagnostics).project
+    assert project is not None
+    target = project.targets[0]
+    assert target.type == "imported"
+    assert target.name == "Zlib::Z"
+    assert target.sources == []
+    assert target.alias == "Zlib::Z"
+
+
+def test_compile_includes_and_defines_propagated():
+    facts = evaluator.BuildFacts()
+    facts.inferred_compiles.append(
+        evaluator.InferredCompile(
+            source="src/a.c",
+            output="liba.a",
+            language="c",
+            flags=["-Wall"],
+            includes=["inc/a"],
+            defines=["A_DEF"],
+            location=parser.SourceLocation("Makefile", 1, 1),
+        )
+    )
+    cfg = ConfigModel(project_name="Demo")
+    diagnostics = DiagnosticCollector()
+    project = builder.build_project(facts, cfg, diagnostics).project
+    assert project is not None
+    tgt = project.targets[0]
+    assert "inc/a" in tgt.include_dirs
+    assert "A_DEF" in tgt.defines

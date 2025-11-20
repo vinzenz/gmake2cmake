@@ -1,8 +1,12 @@
 add_executable(appbin)
 target_sources(appbin PRIVATE "src/main.c")
+target_include_directories(appbin PRIVATE "appinc")
+target_compile_definitions(appbin PRIVATE APP_DEF)
 target_compile_options(appbin PRIVATE -DAPP_DEF -Iappinc)
 
 add_library(corelib STATIC)
 target_sources(corelib PRIVATE "src/core.c")
+target_include_directories(corelib PUBLIC "coreinc")
+target_compile_definitions(corelib PUBLIC CORE_DEF)
 target_compile_options(corelib PUBLIC -DCORE_DEF -Icoreinc)
 add_library(TS25::libcore ALIAS corelib)
