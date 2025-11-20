@@ -8,12 +8,13 @@
 - class IRBuildResult: project(Project), diagnostics(list[Diagnostic]).
 - class TargetSpecHint: optional mapping from config to influence type and names.
 - class ProjectGlobalConfig: vars(dict[str,str]), flags(dict[str,list[str]] keyed by language/all), defines(list[str]), includes(list[str]), feature_toggles(dict[str,str|bool]), sources(list[str]).
+- class UnknownConstruct: id(str UCxxxx), category(enum), file(str), line(int|None), column(int|None), raw_snippet(str, trimmed), normalized_form(str), context(dict targets/variables_in_scope/includes_stack), impact(dict phase/severity), cmake_status(enum), suggested_action(str).
 </data>
 <functions>
   <function name="build_project" signature="build_project(facts: BuildFacts, config: ConfigModel, diagnostics: DiagnosticCollector) -> IRBuildResult">
   - Creates Project with name from config.project_name or inferred from source_dir name (provided via config or args); version from config.version; namespace from config.namespace or sanitized project name.
   - Aggregates languages from inferred compiles; default to ['C'] when empty.
-  - Builds ProjectGlobalConfig from facts.project_globals merged with config flag mappings and ignore rules.
+  - Builds ProjectGlobalConfig from facts.project_globals merged with config flag mappings and ignore rules; attaches UnknownConstructs aggregated from upstream facts.
   - Invokes build_targets and attaches diagnostics; ensures target name uniqueness or emits ERROR IR_DUP_TARGET.</function>
   <function name="build_targets" signature="build_targets(facts: BuildFacts, config: ConfigModel, diagnostics: DiagnosticCollector) -> list[Target]">
   - Groups InferredCompile entries by output artifact; maps to target types (executable if extension missing or .exe; static if .a; shared if .so/.dylib; object if .o); can emit INTERFACE targets for shared flag bundles and IMPORTED targets for prebuilt libs when classified as external-but-shipped.
@@ -28,6 +29,7 @@
   - Uses prerequisites to build dependency graph; sets Target.deps with names matching artifacts; prefers namespaced aliases for internal libs; skips ignored paths.</function>
   <function name="validate_ir" signature="validate_ir(project: Project, diagnostics: DiagnosticCollector) -> None">
   - Ensures no missing source files unless ignored; ensures target deps refer to known targets (WARN IR_UNKNOWN_DEP); validates compile options per language (lightweight whitelist); ensures aliases unique; ensures interface/imported targets not assigned sources; warns when globals duplicated into targets.</function>
+  - UnknownConstruct diagnostics (UNKNOWN_CONSTRUCT) propagated with stable IDs and severity derived from impact.</function>
 </functions>
 <contracts>
 - No file writes; all inputs pure data objects.
@@ -43,5 +45,6 @@
 - Validation detecting unknown deps and missing sources.
 - Global config normalization and dedup across facts/config.
 - Internal vs external classification and alias naming.
-- Interface/imported targets reject sources and set correct visibility.</testing>
+- Interface/imported targets reject sources and set correct visibility.
+- UnknownConstruct aggregation and diagnostic propagation; stable ID assignment/dedup.</testing>
 </component_spec>

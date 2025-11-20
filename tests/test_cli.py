@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 
 import pytest
@@ -43,7 +44,11 @@ def test_run_propagates_errors_and_report(tmp_path, monkeypatch):
         pipeline_fn=lambda ctx: None,
     )
     assert exit_code == 0
-    assert any(path.name == "report.json" for path in fs.store)
+    report_path = next(path for path in fs.store if path.name == "report.json")
+    payload = json.loads(fs.store[report_path])
+    assert "diagnostics" in payload and "unknown_constructs" in payload
+    report_md = next(path for path in fs.store if path.name == "report.md")
+    assert "Unknown Constructs" in fs.store[report_md]
 
 
 def test_run_handles_invalid_args(monkeypatch):

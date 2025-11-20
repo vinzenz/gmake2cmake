@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from gmake2cmake.config import ConfigModel, apply_flag_mapping, classify_library_override
 from gmake2cmake.diagnostics import DiagnosticCollector, add
+from gmake2cmake.ir.unknowns import UnknownConstruct
 from gmake2cmake.make.evaluator import BuildFacts, EvaluatedRule, InferredCompile, ProjectGlobals
 
 
@@ -50,6 +51,7 @@ class Project:
     languages: List[str]
     targets: List[Target]
     project_config: ProjectGlobalConfig
+    unknown_constructs: List[UnknownConstruct] = field(default_factory=list)
 
 
 @dataclass
@@ -64,7 +66,15 @@ def build_project(facts: BuildFacts, config: ConfigModel, diagnostics: Diagnosti
     languages = sorted({c.language for c in facts.inferred_compiles} or {"C"})
     project_config = build_project_global_config(facts.project_globals, config, diagnostics)
     targets = build_targets(facts, config, diagnostics, namespace)
-    project = Project(name=name, version=config.version, namespace=namespace, languages=languages, targets=targets, project_config=project_config)
+    project = Project(
+        name=name,
+        version=config.version,
+        namespace=namespace,
+        languages=languages,
+        targets=targets,
+        project_config=project_config,
+        unknown_constructs=list(facts.unknown_constructs),
+    )
     validate_ir(project, diagnostics)
     return IRBuildResult(project=project, diagnostics=diagnostics.diagnostics)
 

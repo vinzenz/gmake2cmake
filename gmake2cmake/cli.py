@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
 from gmake2cmake import config as config_module
 from gmake2cmake.cmake import emitter as cmake_emitter
-from gmake2cmake.diagnostics import DiagnosticCollector, add, exit_code, to_console, to_json
+from gmake2cmake.diagnostics import DiagnosticCollector, add, exit_code, to_console
 from gmake2cmake.fs import FileSystemAdapter, LocalFS
 from gmake2cmake.ir import builder as ir_builder
+from gmake2cmake.ir.unknowns import UnknownConstruct
+from gmake2cmake.ir.unknowns import to_dict as unknown_to_dict
 from gmake2cmake.make import discovery, evaluator
 from gmake2cmake.make import parser as make_parser
 
@@ -37,6 +40,7 @@ class RunContext:
     diagnostics: DiagnosticCollector
     filesystem: FileSystemAdapter
     now: Callable[[], datetime]
+    unknown_constructs: list[UnknownConstruct] = field(default_factory=list)
 
 
 def parse_args(argv: list[str]) -> CLIArgs:
@@ -103,8 +107,8 @@ def run(
     else:
         _default_pipeline(ctx)
     if args.report:
-        _write_report(args.output_dir, diagnostics, fs)
-    to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose))
+        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs)
+    to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose), unknown_count=len(ctx.unknown_constructs))
     return exit_code(diagnostics)
 
 
@@ -120,6 +124,8 @@ def _default_pipeline(ctx: RunContext) -> None:
         ir_result = ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
         if exit_code(ctx.diagnostics) != 0 or ir_result.project is None:
             continue
+        if ir_result.project.unknown_constructs:
+            ctx.unknown_constructs.extend(ir_result.project.unknown_constructs)
         options = cmake_emitter.EmitOptions(
             dry_run=ctx.args.dry_run,
             packaging=ctx.config.packaging_enabled,
@@ -128,13 +134,45 @@ def _default_pipeline(ctx: RunContext) -> None:
         cmake_emitter.emit(ir_result.project, ctx.args.output_dir, options=options, fs=ctx.filesystem, diagnostics=ctx.diagnostics)
 
 
-def _write_report(output_dir: Path, diagnostics: DiagnosticCollector, fs: FileSystemAdapter) -> None:
+def _write_report(output_dir: Path, diagnostics: DiagnosticCollector, fs: FileSystemAdapter, unknowns: list[UnknownConstruct]) -> None:
     report_path = output_dir / "report.json"
+    markdown_path = output_dir / "report.md"
+    diag_payload = [
+        {
+            "severity": d.severity,
+            "code": d.code,
+            "message": d.message,
+            "location": d.location,
+            "origin": d.origin,
+        }
+        for d in diagnostics.diagnostics
+    ]
+    unknown_payload = [unknown_to_dict(u) for u in unknowns]
+    json_report = {"diagnostics": diag_payload, "unknown_constructs": unknown_payload}
+    markdown = _render_unknowns_markdown(unknowns)
     try:
         fs.makedirs(report_path.parent)
-        fs.write_text(report_path, to_json(diagnostics))
+        fs.write_text(report_path, json.dumps(json_report, sort_keys=True))
+        fs.write_text(markdown_path, markdown)
     except Exception as exc:  # pragma: no cover - IO error path
         add(diagnostics, "ERROR", "REPORT_WRITE_FAIL", f"Failed to write report: {exc}")
+
+
+def _render_unknowns_markdown(unknowns: list[UnknownConstruct]) -> str:
+    lines = ["### Unknown Constructs"]
+    if not unknowns:
+        lines.append("None")
+    for uc in unknowns:
+        location = uc.file
+        if uc.line is not None:
+            location += f":{uc.line}"
+            if uc.column is not None:
+                location += f":{uc.column}"
+        targets = ",".join(uc.context.get("targets", []))
+        lines.append(
+            f"- {uc.id} [{uc.category}] {location} | raw: {uc.raw_snippet} | normalized: {uc.normalized_form} | affects: {targets or 'n/a'} | cmake: {uc.cmake_status} | action: {uc.suggested_action}"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def _stdout():

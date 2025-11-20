@@ -51,7 +51,7 @@ def has_errors(collector: DiagnosticCollector) -> bool:
     return any(d.severity == "ERROR" for d in collector.diagnostics)
 
 
-def to_console(collector: DiagnosticCollector, *, stream: TextIO, verbose: bool) -> None:
+def to_console(collector: DiagnosticCollector, *, stream: TextIO, verbose: bool, unknown_count: int = 0) -> None:
     ordered = sorted(
         collector.diagnostics, key=lambda d: (_SEVERITY_ORDER.get(d.severity, 99), d.code, d.message)
     )
@@ -62,6 +62,8 @@ def to_console(collector: DiagnosticCollector, *, stream: TextIO, verbose: bool)
         if verbose and diag.origin:
             parts[-1] += f" [{diag.origin}]"
         stream.write(parts[-1] + "\n")
+    if unknown_count:
+        stream.write(f"{unknown_count} unknown constructs (see report for details).\n")
 
 
 def to_json(collector: DiagnosticCollector) -> str:

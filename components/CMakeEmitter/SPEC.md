@@ -1,6 +1,6 @@
 <component_spec name="CMakeEmitter">
 <package>gmake2cmake.cmake.emitter</package>
-<purpose>Generate CMakeLists.txt content from IR with deterministic formatting; optionally write to filesystem; preserve unknown flags as pass-through; centralize project-global config and namespaced aliases.</purpose>
+<purpose>Generate CMakeLists.txt content from IR with deterministic formatting; optionally write to filesystem; preserve unknown flags as pass-through; centralize project-global config and namespaced aliases; record unmappable constructs for reporting.</purpose>
 <dependencies>
 - FileSystemAdapter for writes when not dry-run.
 - DiagnosticsReporter for write errors.</dependencies>
@@ -23,7 +23,8 @@
   <function name="render_target" signature="render_target(target: Target, rel_dir: str, namespace: str) -> str">
   - Emits add_executable/add_library/custom_command/interface/imported plus associated target_sources, target_include_directories, target_compile_definitions, target_compile_options, target_link_libraries.
   - For internal libraries, emits ALIAS target `Namespace::Name` referring to physical target; link statements use aliases.
-  - Unknown flags passed to target_compile_options; link options to target_link_options; usage requirements respect PUBLIC/PRIVATE/INTERFACE.</function>
+  - Unknown flags passed to target_compile_options; link options to target_link_options; usage requirements respect PUBLIC/PRIVATE/INTERFACE.
+  - Unrenderable target types or options should emit UNKNOWN_CONSTRUCT (category toolchain_specific/other) with cmake_status not_generated/approximate plus Diagnostic EMIT_UNKNOWN_TYPE.</function>
   <function name="render_packaging" signature="render_packaging(project: Project, namespace: str) -> dict[str, str]">
   - Returns generated content for install/export blocks and Config/ConfigVersion files; ensures consistent namespace and target export name.</function>
   <function name="plan_file_layout" signature="plan_file_layout(project: Project, output_dir: Path) -> dict[str, list[Target]]">
@@ -33,6 +34,7 @@
 - No mutation of IR objects; output content idempotent (same IR -> same content).
 - Paths in generated files must be relative to current CMakeLists.txt location.
 - Must include diagnostics for unknown target types (ERROR EMIT_UNKNOWN_TYPE) without writing invalid CMake.
+- Any unmappable construct must be captured as UnknownConstruct with context and suggested_action manual_review/manual_custom_command.
 - Global config must be centralized in root/module; subdirs include module instead of duplicating.
 - Namespaced aliases must always be emitted for internal libs; linking must prefer alias.
 - Packaging outputs must include install/export blocks and Config files when enabled.
@@ -45,5 +47,6 @@
 - Alias target emission and usage in link statements; imported/interface targets behavior.
 - Packaging mode produces install/export/Config files with namespace.
 - Global config module inclusion and init flag handling.
-- Error when output_dir unwritable (simulate via fs adapter).</testing>
+- Error when output_dir unwritable (simulate via fs adapter).
+- Unknown/emitter-unmappable constructs recorded as UnknownConstruct with diagnostics.</testing>
 </component_spec>

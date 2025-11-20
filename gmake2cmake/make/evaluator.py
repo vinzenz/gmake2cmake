@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from gmake2cmake.config import ConfigModel, should_ignore_path
 from gmake2cmake.diagnostics import DiagnosticCollector, add
+from gmake2cmake.ir.unknowns import UnknownConstruct
 from gmake2cmake.make import parser
 
 
@@ -70,6 +71,7 @@ class BuildFacts:
     custom_commands: List[EvaluatedRule] = field(default_factory=list)
     project_globals: ProjectGlobals = field(default_factory=ProjectGlobals)
     diagnostics: List = field(default_factory=list)
+    unknown_constructs: List[UnknownConstruct] = field(default_factory=list)
 
 
 def evaluate_ast(nodes: List[parser.ASTNode], env: VariableEnv, config: ConfigModel, diagnostics: DiagnosticCollector) -> BuildFacts:
