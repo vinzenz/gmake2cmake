@@ -64,6 +64,7 @@ def test_scan_includes_mandatory_include_missing_errors(tmp_path):
     diagnostics = DiagnosticCollector()
     graph = discovery.scan_includes(root, fs, diagnostics)
     # Should have error diagnostic for missing mandatory include
+    assert root.as_posix() in graph.nodes
     assert has_errors(diagnostics)
     assert any("DISCOVERY_INCLUDE_MISSING" in str(d) for d in diagnostics.diagnostics)
 

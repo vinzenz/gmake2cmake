@@ -4,8 +4,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from gmake2cmake.config import ConfigModel, apply_flag_mapping, classify_library_override, should_ignore_path
-from gmake2cmake.constants import VALID_TARGET_TYPES
+from gmake2cmake.config import (
+    ConfigModel,
+    apply_flag_mapping,
+    classify_library_override,
+    should_ignore_path,
+)
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.ir.unknowns import UnknownConstruct
 from gmake2cmake.make.evaluator import BuildFacts, EvaluatedRule, InferredCompile, ProjectGlobals
@@ -132,7 +136,7 @@ def build_project_global_config(globals: ProjectGlobals, config: ConfigModel, di
         all_unmapped = set()
         for lang, flag_list in flags_by_lang.items():
             mapped, unmapped = apply_flag_mapping(flag_list, config)
-            result[lang] = sorted(set(mapped))  # deduplicate and sort
+            result[lang] = mapped
             all_unmapped.update(unmapped)
 
         # Report unmapped flags if any

@@ -50,7 +50,7 @@
           "type_override": {
             "type": "string",
             "description": "Override target type",
-            "enum": ["executable", "library", "static", "shared", "object", "imported"]
+            "enum": ["executable", "library", "static", "shared", "object", "imported", "interface"]
           },
           "link_libs": {
             "type": "array",

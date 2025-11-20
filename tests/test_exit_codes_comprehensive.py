@@ -11,13 +11,12 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
+from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.exit_codes import (
     ExitCode,
     get_exit_code,
     get_exit_code_with_unknown_threshold,
 )
-from gmake2cmake.diagnostics import DiagnosticCollector, Diagnostic, add
 
 
 class TestExitCodeEnum:

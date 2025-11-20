@@ -6,26 +6,26 @@ and follows the custom exception hierarchy.
 
 from __future__ import annotations
 
-import pytest
 import logging
-from pathlib import Path
 
-from gmake2cmake.exceptions import (
-    GMake2CMakeError,
-    ConfigError,
-    ConfigValidationError,
-    ConfigFileError,
-    DiscoveryError,
-    ParseError,
-    IncludeError,
-    EvaluationError,
-    IRError,
-    EmissionError,
-    ParallelError,
-    ErrorContext,
-)
-from gmake2cmake.schema_validator import validate_config_schema, load_schema
+import pytest
+
 from gmake2cmake.diagnostics import DiagnosticCollector
+from gmake2cmake.exceptions import (
+    ConfigError,
+    ConfigFileError,
+    ConfigValidationError,
+    DiscoveryError,
+    EmissionError,
+    ErrorContext,
+    EvaluationError,
+    GMake2CMakeError,
+    IncludeError,
+    IRError,
+    ParallelError,
+    ParseError,
+)
+from gmake2cmake.schema_validator import validate_config_schema
 
 
 class TestCustomExceptionHierarchy:
@@ -299,7 +299,6 @@ class TestExceptionRecovery:
     def test_graceful_fallback_on_import_error(self):
         """Should gracefully fall back when optional dependencies unavailable."""
         # schema_validator has a fallback when jsonschema is unavailable
-        from gmake2cmake.schema_validator import JSONSCHEMA_AVAILABLE
 
         # Should still work regardless
         diagnostics = DiagnosticCollector()

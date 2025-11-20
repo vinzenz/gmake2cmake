@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.ir.builder import Target
@@ -68,7 +68,6 @@ def detect_cycles(targets: List[Target], diagnostics: DiagnosticCollector) -> Cy
     # Use Tarjan's SCC algorithm to find all strongly connected components
     visited: Set[str] = set()
     rec_stack: Set[str] = set()
-    sccs: List[Set[str]] = []
 
     def tarjan_dfs(node: str, stack: List[str]) -> None:
         """DFS for Tarjan's SCC algorithm."""

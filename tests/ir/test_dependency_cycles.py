@@ -1,9 +1,8 @@
 """Tests for dependency cycle detection and breaking."""
 
-import pytest
 
 from gmake2cmake.diagnostics import DiagnosticCollector
-from gmake2cmake.ir.builder import SourceFile, Target
+from gmake2cmake.ir.builder import Target
 from gmake2cmake.ir.cycles import (
     DependencyCycle,
     break_cycles,
@@ -171,6 +170,7 @@ class TestDetectCycles:
         diagnostics = DiagnosticCollector()
         result = detect_cycles(targets, diagnostics)
 
+        assert result.has_cycles
         assert len(diagnostics.diagnostics) > 0
         assert any("Circular dependency" in d.message for d in diagnostics.diagnostics)
 

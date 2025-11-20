@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import pytest
-import tempfile
-from pathlib import Path
 
 from gmake2cmake.security import (
-    validate_path_in_sandbox,
-    validate_symlink_target,
-    validate_file_size,
-    validate_file_extension,
+    MAX_FILE_SIZE_BYTES,
+    PathTraversalError,
+    ResourceExhaustionError,
+    SandboxViolationError,
+    SecurityError,
     create_sandbox,
     sanitize_command_arg,
+    validate_file_extension,
+    validate_file_size,
     validate_identifier,
-    PathTraversalError,
-    SandboxViolationError,
-    ResourceExhaustionError,
-    SecurityError,
-    MAX_FILE_SIZE_BYTES,
+    validate_path_in_sandbox,
+    validate_symlink_target,
 )
 
 

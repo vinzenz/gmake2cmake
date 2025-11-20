@@ -9,8 +9,7 @@ from __future__ import annotations
 import time
 import tracemalloc
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, Dict, List, Optional, TypeVar, Any
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 T = TypeVar("T")
 

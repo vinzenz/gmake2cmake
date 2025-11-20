@@ -32,17 +32,15 @@ Test Scenarios (TS):
 - TS26: Unknown construct capture/reporting
 """
 
-import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import pytest
 
-from gmake2cmake.config import ConfigModel
+from gmake2cmake.diagnostics import DiagnosticCollector
 from gmake2cmake.fs import LocalFS
 from gmake2cmake.make import discovery, parser
-from gmake2cmake.diagnostics import DiagnosticCollector
 
 
 class ScenarioFixture:

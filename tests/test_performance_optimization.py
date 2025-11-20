@@ -13,13 +13,10 @@ This module tests:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 from gmake2cmake.benchmarks import Benchmark, BenchmarkResult, BenchmarkSuite
+from gmake2cmake.cache import CacheConfig, EvaluationCache
 from gmake2cmake.make.parser import parse_makefile
-from gmake2cmake.cache import EvaluationCache, CacheConfig
 from gmake2cmake.parallel import ParallelEvaluator
-from gmake2cmake.ir.unknowns import UnknownConstructFactory
 
 
 class TestParserPerformance:

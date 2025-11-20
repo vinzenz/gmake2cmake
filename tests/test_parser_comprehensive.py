@@ -13,28 +13,19 @@ Tests cover the entire parser.py module with focus on:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
 from gmake2cmake.make.parser import (
-    parse_makefile,
-    ParseResult,
-    VariableAssign,
-    Rule,
-    PatternRule,
-    IncludeStmt,
     Conditional,
-    RawCommand,
-    SourceLocation,
-    _parse_assignment,
-    _parse_include_statement,
-    _parse_rule,
-    _strip_comment,
-    _join_continuations,
+    IncludeStmt,
+    ParseResult,
+    PatternRule,
+    Rule,
+    VariableAssign,
     _is_conditional_start,
+    _join_continuations,
+    _strip_comment,
     parse_commands,
+    parse_makefile,
 )
-from gmake2cmake.ir.unknowns import UnknownConstructFactory
 
 
 class TestParseBasicStatements:
@@ -288,7 +279,7 @@ endif"""
         result = parse_makefile(content, "Makefile")
 
         # Should still parse but report error
-        errors = [d for d in result.diagnostics if d.get("severity") == "ERROR"]
+        _errors = [d for d in result.diagnostics if d.get("severity") == "ERROR"]
         # Unknown construct will be treated as such
         assert len(result.ast) >= 1
 
@@ -491,6 +482,7 @@ endif"""
         result = parse_makefile(content, "Makefile")
 
         # Should be treated as unknown or skipped due to colon in var name
+        assert all(not isinstance(node, Rule) for node in result.ast)
 
 
 class TestParserHelperFunctions:

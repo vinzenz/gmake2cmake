@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import pytest
-from gmake2cmake.parallel import (
-    ParallelEvaluator,
-    partition_work,
-    merge_build_facts,
-    should_parallelize,
-)
 from gmake2cmake.make.discovery import IncludeGraph
 from gmake2cmake.make.evaluator import (
     BuildFacts,
-    ProjectGlobals,
     EvaluatedRule,
+    ProjectGlobals,
 )
 from gmake2cmake.make.parser import SourceLocation
+from gmake2cmake.parallel import (
+    ParallelEvaluator,
+    merge_build_facts,
+    partition_work,
+    should_parallelize,
+)
 
 
 class TestWorkPartitioning:
@@ -313,6 +312,8 @@ class TestParallelIntegration:
         work_items = [
             (partition, {"Makefile1": "content1", "Makefile2": "content2"}),
         ]
+        assert evaluator is not None
+        assert work_items
 
         # This should complete without error
         # (actual results depend on worker implementation)

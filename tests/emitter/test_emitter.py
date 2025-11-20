@@ -239,7 +239,7 @@ def test_emit_reports_write_failures(tmp_path):
         def is_file(self, path):
             return False
 
-    emit_result = emitter.emit(
+    _ = emitter.emit(
         project,
         tmp_path,
         options=emitter.EmitOptions(dry_run=False, packaging=False, namespace="Demo"),

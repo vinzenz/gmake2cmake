@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from gmake2cmake.diagnostics import DiagnosticCollector, add
-from gmake2cmake.exceptions import ConfigValidationError, ConfigFileError
+from gmake2cmake.exceptions import ConfigFileError
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from gmake2cmake.cache import EvaluationCache, CacheConfig, CacheStats
+
+from gmake2cmake.cache import CacheConfig, CacheStats, EvaluationCache
 from gmake2cmake.make.evaluator import InferredCompile
 from gmake2cmake.make.parser import SourceLocation
 

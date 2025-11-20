@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 
-from gmake2cmake.ir.builder import (
-    CustomCommand,
-    SourceFile,
-    Target,
-    ProjectGlobalConfig,
-    Project,
-    IRBuildResult,
-    build_project,
-)
-from gmake2cmake.make.evaluator import BuildFacts, ProjectGlobals, EvaluatedRule, EvaluatedCommand
-from gmake2cmake.make.parser import SourceLocation
 from gmake2cmake.config import ConfigModel
 from gmake2cmake.diagnostics import DiagnosticCollector
+from gmake2cmake.ir.builder import (
+    CustomCommand,
+    IRBuildResult,
+    Project,
+    ProjectGlobalConfig,
+    SourceFile,
+    Target,
+    build_project,
+)
+from gmake2cmake.make.evaluator import BuildFacts
 
 
 class TestCustomCommand:

@@ -7,10 +7,10 @@ import pytest
 from gmake2cmake.diagnostic_codes import (
     DiagnosticCode,
     DiagnosticMetadata,
-    get_metadata,
     generate_documentation,
-    list_codes_by_category,
+    get_metadata,
     is_valid_code,
+    list_codes_by_category,
     validate_code,
 )
 

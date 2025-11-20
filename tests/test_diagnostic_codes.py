@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import pytest
+
 from gmake2cmake.diagnostic_codes import (
     DiagnosticCode,
     DiagnosticMetadata,
+    generate_documentation,
     get_metadata,
     is_valid_code,
-    validate_code,
     list_codes_by_category,
-    generate_documentation,
+    validate_code,
 )
 
 

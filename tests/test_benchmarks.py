@@ -6,15 +6,12 @@ Run with: pytest tests/test_benchmarks.py -v --tb=short
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-
 from gmake2cmake.benchmarks import (
+    PERFORMANCE_TARGETS,
     Benchmark,
     BenchmarkResult,
     BenchmarkSuite,
     benchmark_function,
-    PERFORMANCE_TARGETS,
 )
 
 

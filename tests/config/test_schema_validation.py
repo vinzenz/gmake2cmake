@@ -72,6 +72,7 @@ def test_validate_invalid_language():
     result = validate_config_schema(config, collector)
     # Should either fail or warn about invalid language
     # The schema validation behavior depends on whether jsonschema is available
+    assert result is False or any("language" in d.message.lower() for d in collector.diagnostics)
 
 
 def test_validate_target_mappings():
@@ -105,6 +106,7 @@ def test_validate_invalid_target_type():
     collector = DiagnosticCollector()
     result = validate_config_schema(config, collector)
     # Should either fail or warn about invalid type
+    assert result is False or any("type" in d.message.lower() for d in collector.diagnostics)
 
 
 def test_validate_link_overrides():
@@ -135,6 +137,7 @@ def test_validate_invalid_classification():
     }
     collector = DiagnosticCollector()
     result = validate_config_schema(config, collector)
+    assert result is False or any("classification" in d.message.lower() for d in collector.diagnostics)
 
 
 def test_basic_validation_invalid_languages_type():
