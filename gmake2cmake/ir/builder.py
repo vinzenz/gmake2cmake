@@ -18,6 +18,7 @@ class SourceFile:
 
 @dataclass
 class Target:
+    artifact: str
     name: str
     alias: Optional[str]
     type: str
@@ -84,11 +85,15 @@ def build_targets(facts: BuildFacts, config: ConfigModel, diagnostics: Diagnosti
     for comp in facts.inferred_compiles:
         key = comp.output or comp.source
         grouped.setdefault(key, []).append(comp)
+    artifact_map: Dict[str, Target] = {}
     targets: List[Target] = []
     for artifact, compiles in grouped.items():
         ttype = _infer_type(artifact)
         physical_name = _physical_name(namespace, artifact)
         alias_name = f"{namespace}::{Path(artifact).stem}"
+        classification = _classify_target(artifact, config)
+        if classification != "internal":
+            alias_name = None
         sources = make_source_files(compiles)
         compile_flags = []
         unmapped_flags = []
@@ -103,22 +108,25 @@ def build_targets(facts: BuildFacts, config: ConfigModel, diagnostics: Diagnosti
             physical_name = target_mapping.dest_name
             if target_mapping.type_override:
                 ttype = target_mapping.type_override
-        targets.append(
-            Target(
-                name=physical_name,
-                alias=alias_name,
-                type=ttype,
-                sources=sources,
-                include_dirs=[],
-                defines=[],
-                compile_options=sorted(set(compile_flags)),
-                link_options=[],
-                link_libs=[],
-                deps=[],
-                custom_commands=[],
-            )
+        tgt = Target(
+            artifact=artifact,
+            name=physical_name,
+            alias=alias_name,
+            type=ttype,
+            sources=sources,
+            include_dirs=sorted(set(target_mapping.include_dirs)) if target_mapping else [],
+            defines=sorted(set(target_mapping.defines)) if target_mapping else [],
+            compile_options=sorted(set(compile_flags)),
+            link_options=[],
+            link_libs=[],
+            deps=[],
+            custom_commands=[],
         )
-    attach_dependencies(targets, facts.rules)
+        if target_mapping and target_mapping.options:
+            tgt.compile_options = sorted(set(tgt.compile_options + target_mapping.options))
+        artifact_map[artifact] = tgt
+        targets.append(tgt)
+    attach_dependencies(targets, facts.rules, artifact_map)
     targets = sorted(targets, key=lambda t: t.name)
     return targets
 
@@ -149,15 +157,24 @@ def make_source_files(compiles: List[InferredCompile]) -> List[SourceFile]:
     return sorted(seen.values(), key=lambda s: s.path)
 
 
-def attach_dependencies(targets: List[Target], rules: List[EvaluatedRule]) -> None:
-    target_names = {t.name: t for t in targets}
-    for rule in rules:
-        for prereq in rule.prerequisites:
-            stem = Path(prereq).stem
-            for t in targets:
-                if Path(t.name).stem == stem and t.name in target_names:
-                    continue
-        # simplified: not attaching specific deps beyond grouping by artifact here
+def attach_dependencies(targets: List[Target], rules: List[EvaluatedRule], artifact_map: Dict[str, Target]) -> None:
+    name_lookup: Dict[str, Target] = {}
+    for artifact, tgt in artifact_map.items():
+        name_lookup[Path(artifact).name] = tgt
+        name_lookup[Path(artifact).stem] = tgt
+        name_lookup[tgt.name] = tgt
+    for tgt in targets:
+        deps: List[str] = []
+        for rule in rules:
+            if not _rule_matches_target(rule, tgt):
+                continue
+            for prereq in rule.prerequisites:
+                dep_tgt = name_lookup.get(Path(prereq).name) or name_lookup.get(Path(prereq).stem)
+                if dep_tgt:
+                    dep_name = dep_tgt.alias or dep_tgt.name
+                    if dep_name not in deps:
+                        deps.append(dep_name)
+        tgt.deps = sorted(deps)
 
 
 def validate_ir(project: Project, diagnostics: DiagnosticCollector) -> None:
@@ -171,3 +188,16 @@ def validate_ir(project: Project, diagnostics: DiagnosticCollector) -> None:
             if t.alias in aliases:
                 add(diagnostics, "ERROR", "IR_DUP_ALIAS", f"Duplicate alias {t.alias}")
             aliases.add(t.alias)
+
+
+def _classify_target(artifact: str, config: ConfigModel) -> str:
+    stem = Path(artifact).stem
+    override = classify_library_override(stem, config)
+    if override:
+        return override.classification
+    return "internal"
+
+
+def _rule_matches_target(rule: EvaluatedRule, target: Target) -> bool:
+    target_names = {target.name, Path(target.artifact).name, Path(target.artifact).stem}
+    return any(name in target_names for name in rule.targets)
