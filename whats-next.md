@@ -1,4 +1,3 @@
 - Fill out IRBuilder classifications: internal vs external/imported libs using build rules, tree location, and link_overrides; attach deps from prerequisites; propagate usage requirements (PUBLIC/PRIVATE/INTERFACE) and include/defines/options; ensure aliases used in deps.
-- CMakeEmitter upgrades landed (alias-aware linking, interface/imported targets, packaging/ConfigVersion, global INTERFACE module); next verify with integration fixtures and packaging smoke.
 - Add integration fixtures for TS21–TS25 (global config, alias linking internal vs external, INTERFACE/IMPORTED targets, packaging mode, global vs per-target flags); golden-file checks for generated CMake.
 - Wire lint (ruff) into CI and optionally add basic README/CLI usage docs; consider adding console scripts entry point in pyproject.
