@@ -1,12 +1,20 @@
-"""Configuration schema validation utilities."""
+"""Configuration schema validation utilities.
+
+Provides JSON schema-based validation for configuration files with
+fallback to basic validation if jsonschema library is unavailable.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
 from gmake2cmake.diagnostics import DiagnosticCollector, add
+from gmake2cmake.exceptions import ConfigValidationError, ConfigFileError
+
+logger = logging.getLogger(__name__)
 
 try:
     import jsonschema
@@ -20,10 +28,23 @@ def load_schema() -> Dict[str, Any]:
 
     Returns:
         Dictionary containing the JSON schema.
+
+    Raises:
+        ConfigFileError: If schema file cannot be read or parsed
     """
     schema_path = Path(__file__).parent / "config_schema.json"
-    with open(schema_path, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(schema_path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError as e:
+        logger.error("Schema file not found: %s", schema_path)
+        raise ConfigFileError(f"Schema file not found: {schema_path}") from e
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse schema JSON: %s", e)
+        raise ConfigFileError(f"Schema file is not valid JSON: {schema_path}") from e
+    except (IOError, OSError) as e:
+        logger.error("Error reading schema file: %s", e)
+        raise ConfigFileError(f"Cannot read schema file: {schema_path}") from e
 
 
 def validate_config_schema(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
@@ -38,22 +59,33 @@ def validate_config_schema(config_data: Dict[str, Any], diagnostics: DiagnosticC
     """
     if not JSONSCHEMA_AVAILABLE:
         # Fallback to basic validation if jsonschema is not available
+        logger.debug("jsonschema not available, using basic validation")
         return _basic_config_validation(config_data, diagnostics)
 
     try:
         schema = load_schema()
         jsonschema.validate(instance=config_data, schema=schema)
+        logger.info("Configuration schema validation passed")
         return True
     except jsonschema.ValidationError as e:
         error_path = ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
         message = f"Invalid configuration at {error_path}: {e.message}"
+        logger.error("Schema validation failed: %s", message)
         add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", message)
         return False
     except jsonschema.SchemaError as e:
+        logger.error("Schema itself is invalid: %s", e.message)
         add(diagnostics, "ERROR", "CONFIG_SCHEMA_ERROR", f"Schema error: {e.message}")
         return False
-    except Exception as e:
-        add(diagnostics, "ERROR", "CONFIG_VALIDATION_ERROR", f"Validation error: {str(e)}")
+    except ConfigFileError as e:
+        # ConfigFileError from load_schema()
+        logger.error("Failed to load schema: %s", e)
+        add(diagnostics, "ERROR", "CONFIG_FILE_ERROR", str(e))
+        return False
+    except (TypeError, ValueError) as e:
+        # Data structure errors
+        logger.error("Configuration data type error: %s", e)
+        add(diagnostics, "ERROR", "CONFIG_TYPE_ERROR", f"Configuration type error: {e}")
         return False
 
 
