@@ -17,13 +17,30 @@ def test_parse_pattern_rule_and_include():
     content = "include inc.mk\n%.o: %.c\n\tcc -c $< -o $@\n"
     result = parser.parse_makefile(content, "Makefile")
     includes = [n for n in result.ast if isinstance(n, parser.IncludeStmt)]
-    patterns = [n for n in result.ast if isinstance(n, parser.Rule)]
+    patterns = [n for n in result.ast if isinstance(n, parser.PatternRule)]
     assert includes[0].optional is False
     assert patterns
 
 
-def test_line_continuations():
-    content = "VAR = one \\\n two\n"
+def test_line_continuations_and_comments():
+    content = "VAR = one \\\n two # trailing\n# whole comment\n"
     result = parser.parse_makefile(content, "Makefile")
     assigns = [n for n in result.ast if isinstance(n, parser.VariableAssign)]
-    assert "two" in assigns[0].value
+    assert assigns[0].value == "one  two"
+
+
+def test_parse_conditionals_nested():
+    content = """ifeq ($(MODE),debug)
+VAR = DEBUG
+foo: foo.c
+\tgcc -c $< -o $@
+else
+bar: bar.c
+\t@echo skip
+endif
+"""
+    result = parser.parse_makefile(content, "Makefile")
+    cond = next(n for n in result.ast if isinstance(n, parser.Conditional))
+    assert isinstance(cond.true_body[0], parser.VariableAssign)
+    assert isinstance(cond.true_body[1], parser.Rule)
+    assert cond.false_body and isinstance(cond.false_body[0], parser.Rule)
