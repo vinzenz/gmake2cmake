@@ -1,0 +1,1 @@
+"""CMake emitter package."""

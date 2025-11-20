@@ -1,0 +1,23 @@
+[project]
+name = "gmake2cmake"
+version = "0.1.0"
+description = "CLI tool to migrate GNU Make projects to CMake"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.3.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-select = ["I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
