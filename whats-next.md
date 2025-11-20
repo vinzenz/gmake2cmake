@@ -181,3 +181,10 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 3. Set up CI/CD pipeline with test scenarios
 4. Create development branches for parallel work streams
 </current_state>
+
+<todos>
+- Triage and prioritize new discovery regressions captured in TASK-0065 through TASK-0070 (real-world scans from Git, BusyBox, binutils-gdb, OpenSSL).
+- Wire the new regression fixtures in tests/discovery/test_real_world_regressions.py into the CI matrix to keep conversion diagnostics stable.
+- Define and implement TASK-0071 to add source-line context to JSON/markdown diagnostics for easier triage of discovery errors.
+- Break down and schedule make introspection feature: TASK-0072 (flag/config), TASK-0073 (runner), TASK-0074 (dump parser), TASK-0075 (IR reconciliation + diagnostics), TASK-0076 (reporting/metrics).
+</todos>
