@@ -187,4 +187,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Wire the new regression fixtures in tests/discovery/test_real_world_regressions.py into the CI matrix to keep conversion diagnostics stable.
 - Define and implement TASK-0071 to add source-line context to JSON/markdown diagnostics for easier triage of discovery errors.
 - Break down and schedule make introspection feature: TASK-0072 (flag/config), TASK-0073 (runner), TASK-0074 (dump parser), TASK-0075 (IR reconciliation + diagnostics), TASK-0076 (reporting/metrics).
+- Continue TASK-0061 complexity reductions: remaining >B spots include cli.run/_default_pipeline, exit_codes.get_exit_code, markdown_reporter._recommendations_section, and any lingering diagnostics constructors; plan additional refactors to reach <10 across targets.
 </todos>

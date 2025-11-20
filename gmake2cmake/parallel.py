@@ -31,52 +31,58 @@ def partition_work(graph: IncludeGraph) -> WorkPartition:
         WorkPartition with independent chunks and dependency info
     """
     partition = WorkPartition()
-
-    # Build reverse dependency map for efficient traversal
-    reverse_deps: Dict[str, Set[str]] = {}
-    for parent, children in graph.edges.items():
-        for child in children:
-            if child not in reverse_deps:
-                reverse_deps[child] = set()
-            reverse_deps[child].add(parent)
-
+    reverse_deps = _build_reverse_dependencies(graph.edges)
     visited: Set[str] = set()
     processed: Set[str] = set()
 
-    def get_all_dependents(node: str, all_deps: Set[str]) -> None:
-        """Recursively collect all nodes that depend on a given node."""
+    for root in graph.roots:
+        if root in visited:
+            continue
+        component = _collect_component(root, reverse_deps, processed)
+        _record_dependencies(component, graph.edges, partition)
+        partition.partitions.append(component)
+        visited.update(component)
+
+    _append_remaining_nodes(graph, visited, partition)
+    return partition
+
+
+def _build_reverse_dependencies(edges: Dict[str, Set[str]]) -> Dict[str, Set[str]]:
+    reverse_deps: Dict[str, Set[str]] = {}
+    for parent, children in edges.items():
+        for child in children:
+            reverse_deps.setdefault(child, set()).add(parent)
+    return reverse_deps
+
+
+def _collect_component(root: str, reverse_deps: Dict[str, Set[str]], processed: Set[str]) -> Set[str]:
+    component: Set[str] = set()
+
+    def get_all_dependents(node: str) -> None:
         if node in processed:
             return
         processed.add(node)
-        all_deps.add(node)
+        component.add(node)
         for dependent in reverse_deps.get(node, set()):
-            if dependent not in all_deps:
-                get_all_dependents(dependent, all_deps)
+            if dependent not in component:
+                get_all_dependents(dependent)
 
-    # For each root, identify the strongly connected component
-    for root in graph.roots:
-        if root not in visited:
-            # This root and all its dependents form a unit
-            component: Set[str] = set()
-            get_all_dependents(root, component)
+    get_all_dependents(root)
+    return component
 
-            # Add direct dependencies from component
-            for node in component:
-                if node not in partition.dependencies:
-                    partition.dependencies[node] = set()
-                for dep in graph.edges.get(node, set()):
-                    partition.dependencies[node].add(dep)
 
-            partition.partitions.append(component)
-            visited.update(component)
+def _record_dependencies(component: Set[str], edges: Dict[str, Set[str]], partition: WorkPartition) -> None:
+    for node in component:
+        deps = partition.dependencies.setdefault(node, set())
+        deps.update(edges.get(node, set()))
 
-    # Add any remaining nodes
+
+def _append_remaining_nodes(graph: IncludeGraph, visited: Set[str], partition: WorkPartition) -> None:
     for node in graph.nodes:
-        if node not in visited:
-            partition.partitions.append({node})
-            partition.dependencies[node] = graph.edges.get(node, set())
-
-    return partition
+        if node in visited:
+            continue
+        partition.partitions.append({node})
+        partition.dependencies[node] = graph.edges.get(node, set())
 
 
 def merge_build_facts(fact_list: List[BuildFacts]) -> BuildFacts:

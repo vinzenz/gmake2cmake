@@ -100,45 +100,18 @@ def emit(
     generated: List[GeneratedFile] = []
     unknown_constructs: List[UnknownConstruct] = []
     alias_lookup = _build_alias_lookup(project.targets)
-    has_global_module = bool(
-        project.project_config.vars
-        or project.project_config.flags
-        or project.project_config.defines
-        or project.project_config.includes
-        or project.project_config.feature_toggles
+    has_global_module = _has_global_module(project)
+    global_interface_alias = _emit_global_module(
+        project,
+        output_dir,
+        options,
+        has_global_module,
+        fs,
+        diagnostics,
+        alias_lookup,
+        generated,
     )
-    has_global_interface = bool(project.project_config.includes or project.project_config.defines or project.project_config.flags)
-    global_interface_alias: Optional[str] = None
-    if has_global_module:
-        global_interface_name, global_alias_name = _global_interface_names(options.namespace)
-        if has_global_interface:
-            alias_lookup.setdefault(global_interface_name, global_alias_name)
-            alias_lookup.setdefault(global_alias_name, global_alias_name)
-            global_interface_alias = global_alias_name
-        global_module_path = output_dir / GLOBAL_MODULE_NAME
-        global_content = render_global_module(
-            project.project_config,
-            options.namespace,
-            interface_name=global_interface_name,
-            alias=global_alias_name,
-        )
-        generated.append(GeneratedFile(path=global_module_path.as_posix(), content=global_content))
-        if not options.dry_run:
-            try:
-                fs.makedirs(global_module_path.parent)
-                fs.write_text(global_module_path, global_content)
-            except (OSError, PermissionError) as exc:  # pragma: no cover - IO error path
-                add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {global_module_path}: {exc}")
-    subdirs: List[str] = []
-    for dirpath in sorted(layout, key=lambda p: Path(p).as_posix()):
-        if dirpath == output_dir:
-            continue
-        try:
-            rel = Path(dirpath).relative_to(output_dir).as_posix()
-        except ValueError:
-            rel = Path(dirpath).name
-        subdirs.append(rel)
-    subdirs = sorted(set(subdirs))
+    subdirs = _collect_subdirs(layout, output_dir)
     root_result = render_root(
         project,
         subdirs,
@@ -149,22 +122,125 @@ def emit(
         diagnostics=diagnostics,
         unknown_factory=unknown_factory,
     )
-    root_content = root_result.rendered
+    _record_root_file(output_dir, fs, diagnostics, generated, root_result, options.dry_run)
     unknown_constructs.extend(root_result.unknown_constructs)
-    root_path = output_dir / "CMakeLists.txt"
-    generated.append(GeneratedFile(path=root_path.as_posix(), content=root_content))
+    dir_results, nested_unknowns = _emit_directory_targets(
+        layout,
+        output_dir,
+        options,
+        alias_lookup,
+        global_interface_alias,
+        diagnostics,
+        unknown_factory,
+        fs,
+    )
+    generated.extend(dir_results)
+    unknown_constructs.extend(nested_unknowns)
+    if options.packaging:
+        generated.extend(
+            _emit_packaging_files(
+                project, options.namespace, has_global_module, output_dir, fs, diagnostics, options.dry_run
+            )
+        )
+    return EmitResult(generated_files=generated, unknown_constructs=unknown_constructs)
+
+
+def _has_global_module(project: Project) -> bool:
+    return bool(
+        project.project_config.vars
+        or project.project_config.flags
+        or project.project_config.defines
+        or project.project_config.includes
+        or project.project_config.feature_toggles
+    )
+
+
+def _emit_global_module(
+    project: Project,
+    output_dir: Path,
+    options: EmitOptions,
+    has_global_module: bool,
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+    alias_lookup: Dict[str, str],
+    generated: List[GeneratedFile],
+) -> Optional[str]:
+    has_global_interface = bool(project.project_config.includes or project.project_config.defines or project.project_config.flags)
+    if not has_global_module:
+        return None
+    global_interface_name, global_alias_name = _global_interface_names(options.namespace)
+    global_interface_alias: Optional[str] = None
+    if has_global_interface:
+        alias_lookup.setdefault(global_interface_name, global_alias_name)
+        alias_lookup.setdefault(global_alias_name, global_alias_name)
+        global_interface_alias = global_alias_name
+    global_module_path = output_dir / GLOBAL_MODULE_NAME
+    global_content = render_global_module(
+        project.project_config,
+        options.namespace,
+        interface_name=global_interface_name,
+        alias=global_alias_name,
+    )
+    generated.append(GeneratedFile(path=global_module_path.as_posix(), content=global_content))
     if not options.dry_run:
         try:
-            fs.makedirs(root_path.parent)
-            fs.write_text(root_path, root_content)
+            fs.makedirs(global_module_path.parent)
+            fs.write_text(global_module_path, global_content)
         except (OSError, PermissionError) as exc:  # pragma: no cover - IO error path
-            add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {root_path}: {exc}")
+            add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {global_module_path}: {exc}")
+    return global_interface_alias
 
+
+def _collect_subdirs(layout: Dict[Path, List[Target]], output_dir: Path) -> List[str]:
+    subdirs = []
+    for dirpath in sorted(layout, key=lambda p: Path(p).as_posix()):
+        if dirpath == output_dir:
+            continue
+        try:
+            rel = Path(dirpath).relative_to(output_dir).as_posix()
+        except ValueError:
+            rel = Path(dirpath).name
+        subdirs.append(rel)
+    return sorted(set(subdirs))
+
+
+def _record_root_file(
+    output_dir: Path,
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+    generated: List[GeneratedFile],
+    root_result: RenderResult,
+    dry_run: bool,
+) -> None:
+    root_content = root_result.rendered
+    root_path = output_dir / "CMakeLists.txt"
+    generated.append(GeneratedFile(path=root_path.as_posix(), content=root_content))
+    if dry_run:
+        return
+    try:
+        fs.makedirs(root_path.parent)
+        fs.write_text(root_path, root_content)
+    except (OSError, PermissionError) as exc:  # pragma: no cover - IO error path
+        add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {root_path}: {exc}")
+
+
+def _emit_directory_targets(
+    layout: Dict[Path, List[Target]],
+    output_dir: Path,
+    options: EmitOptions,
+    alias_lookup: Dict[str, str],
+    global_interface_alias: Optional[str],
+    diagnostics: DiagnosticCollector,
+    unknown_factory: UnknownConstructFactory,
+    fs: FileSystemAdapter,
+) -> Tuple[List[GeneratedFile], List[UnknownConstruct]]:
+    generated: List[GeneratedFile] = []
+    unknowns: List[UnknownConstruct] = []
     for dirpath, targets in layout.items():
         rel_dir = Path(dirpath)
-        path = rel_dir / "CMakeLists.txt"
         if rel_dir == output_dir:
             continue
+        path = rel_dir / "CMakeLists.txt"
         rendered_targets = []
         for target in targets:
             result = render_target(
@@ -177,7 +253,7 @@ def emit(
                 unknown_factory=unknown_factory,
             )
             rendered_targets.append(result.rendered)
-            unknown_constructs.extend(result.unknown_constructs)
+            unknowns.extend(result.unknown_constructs)
         content = "\n".join(rendered_targets)
         generated.append(GeneratedFile(path=path.as_posix(), content=content))
         if not options.dry_run:
@@ -186,20 +262,31 @@ def emit(
                 fs.write_text(path, content)
             except (OSError, PermissionError) as exc:  # pragma: no cover
                 add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {path}: {exc}")
+    return generated, unknowns
 
-    if options.packaging:
-        pkg_files = render_packaging(project, options.namespace, has_global_module=has_global_module)
-        for fname, content in pkg_files.items():
-            full_path = output_dir / fname
-            generated.append(GeneratedFile(path=full_path.as_posix(), content=content))
-            if not options.dry_run:
-                try:
-                    fs.makedirs(full_path.parent)
-                    fs.write_text(full_path, content)
-                except (OSError, PermissionError) as exc:  # pragma: no cover
-                    add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {full_path}: {exc}")
 
-    return EmitResult(generated_files=generated, unknown_constructs=unknown_constructs)
+def _emit_packaging_files(
+    project: Project,
+    namespace: str,
+    has_global_module: bool,
+    output_dir: Path,
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+    dry_run: bool,
+) -> List[GeneratedFile]:
+    generated: List[GeneratedFile] = []
+    pkg_files = render_packaging(project, namespace, has_global_module=has_global_module)
+    for fname, content in pkg_files.items():
+        full_path = output_dir / fname
+        generated.append(GeneratedFile(path=full_path.as_posix(), content=content))
+        if dry_run:
+            continue
+        try:
+            fs.makedirs(full_path.parent)
+            fs.write_text(full_path, content)
+        except (OSError, PermissionError) as exc:  # pragma: no cover
+            add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {full_path}: {exc}")
+    return generated
 
 
 def render_root(
@@ -243,31 +330,73 @@ def render_root(
 
 def render_global_module(project_config, namespace: str, *, interface_name: str, alias: str) -> str:
     lines = ["# Project global configuration"]
+    lines.extend(_render_feature_toggles(project_config))
+    lines.extend(_render_global_vars(project_config))
+    lines.extend(_render_flag_initializers(project_config))
+    lines.extend(_render_global_interface(project_config, interface_name, alias))
+    return "\n".join(lines) + "\n"
+
+
+def _render_feature_toggles(project_config) -> List[str]:
+    lines: List[str] = []
     for name, value in sorted(project_config.feature_toggles.items()):
         if isinstance(value, bool):
             default = "ON" if value else "OFF"
             lines.append(f'option({name} "Feature toggle from Make" {default})')
         else:
             lines.append(f'set({name} "{value}" CACHE STRING "Feature toggle from Make")')
-    for name, value in sorted(project_config.vars.items()):
-        lines.append(f"set({name} \"{value}\" CACHE STRING \"Global var from Make\")")
+    return lines
+
+
+def _render_global_vars(project_config) -> List[str]:
+    return [f"set({name} \"{value}\" CACHE STRING \"Global var from Make\")" for name, value in sorted(project_config.vars.items())]
+
+
+def _render_flag_initializers(project_config) -> List[str]:
+    lines: List[str] = []
     for lang, flags in sorted(project_config.flags.items()):
         init_var = {"c": "C", "cpp": "CXX"}.get(lang, lang.upper())
         lines.append(f"set(CMAKE_{init_var}_FLAGS_INIT \"{' '.join(flags)}\")")
+    return lines
+
+
+def _render_global_interface(project_config, interface_name: str, alias: str) -> List[str]:
     needs_interface = bool(project_config.includes or project_config.defines or project_config.flags)
-    if needs_interface:
-        lines.append(f"add_library({interface_name} INTERFACE)")
-        if project_config.includes:
-            includes = " ".join(f'"{inc}"' for inc in sorted(set(project_config.includes)))
-            lines.append(f"target_include_directories({interface_name} INTERFACE {includes})")
-        if project_config.defines:
-            defines = " ".join(sorted(set(project_config.defines)))
-            lines.append(f"target_compile_definitions({interface_name} INTERFACE {defines})")
-        compile_flags = sorted({flag for values in project_config.flags.values() for flag in values})
-        if compile_flags:
-            lines.append(f"target_compile_options({interface_name} INTERFACE {' '.join(compile_flags)})")
-        lines.append(f"add_library({alias} ALIAS {interface_name})")
-    return "\n".join(lines) + "\n"
+    if not needs_interface:
+        return []
+    lines: List[str] = [f"add_library({interface_name} INTERFACE)"]
+    include_line = _format_interface_includes(project_config.includes, interface_name)
+    if include_line:
+        lines.append(include_line)
+    defines_line = _format_interface_defines(project_config.defines, interface_name)
+    if defines_line:
+        lines.append(defines_line)
+    flags_line = _format_interface_flags(project_config.flags, interface_name)
+    if flags_line:
+        lines.append(flags_line)
+    lines.append(f"add_library({alias} ALIAS {interface_name})")
+    return lines
+
+
+def _format_interface_includes(includes: List[str], interface_name: str) -> Optional[str]:
+    if not includes:
+        return None
+    formatted = " ".join(f'"{inc}"' for inc in sorted(set(includes)))
+    return f"target_include_directories({interface_name} INTERFACE {formatted})"
+
+
+def _format_interface_defines(defines: List[str], interface_name: str) -> Optional[str]:
+    if not defines:
+        return None
+    formatted = " ".join(sorted(set(defines)))
+    return f"target_compile_definitions({interface_name} INTERFACE {formatted})"
+
+
+def _format_interface_flags(flags: Dict[str, List[str]], interface_name: str) -> Optional[str]:
+    compile_flags = sorted({flag for values in flags.values() for flag in values})
+    if not compile_flags:
+        return None
+    return f"target_compile_options({interface_name} INTERFACE {' '.join(compile_flags)})"
 
 
 def render_target(
@@ -284,6 +413,44 @@ def render_target(
     unknown_constructs: List[UnknownConstruct] = []
     lines: List[str] = []
     scope = _usage_scope(target)
+    link_items = _build_link_items(target, global_link, alias_lookup)
+    includes = sorted(set(target.include_dirs))
+    defines = sorted(set(target.defines))
+    compile_opts = sorted(set(target.compile_options))
+    link_opts = sorted(set(target.link_options))
+
+    renderers = {
+        "executable": _render_binary_target,
+        "shared": _render_binary_target,
+        "static": _render_binary_target,
+        "object": _render_binary_target,
+        "interface": _render_interface_target,
+        "imported": _render_imported_target,
+    }
+
+    renderer = renderers.get(target.type)
+    if renderer is None:
+        return _handle_unknown_target_type(target, rel_dir, diagnostics, unknown_factory, unknown_constructs)
+
+    lines.extend(
+        renderer(
+            target,
+            rel_dir,
+            scope,
+            includes,
+            defines,
+            compile_opts,
+            link_opts,
+            link_items,
+        )
+    )
+    lines.extend(_render_custom_commands(target, rel_dir))
+    return RenderResult(rendered="\n".join(lines) + "\n", unknown_constructs=unknown_constructs)
+
+
+def _build_link_items(
+    target: Target, global_link: Optional[str], alias_lookup: Optional[Dict[str, str]]
+) -> List[str]:
     link_items: List[str] = []
     if global_link and target.type not in {"imported"}:
         link_items.append(global_link)
@@ -291,82 +458,137 @@ def render_target(
     link_items.extend(sorted(target.link_libs))
     if alias_lookup:
         link_items = [alias_lookup.get(item, item) for item in link_items]
-    link_items = _dedupe(link_items)
-    includes = sorted(set(target.include_dirs))
-    defines = sorted(set(target.defines))
-    compile_opts = sorted(set(target.compile_options))
-    link_opts = sorted(set(target.link_options))
+    return _dedupe(link_items)
 
-    def _emit_usage_requirements(name: str) -> None:
-        if includes:
-            parts = " ".join(f'"{_relativize(inc, rel_dir)}"' for inc in includes)
-            lines.append(f"target_include_directories({name} {scope} {parts})")
-        if defines:
-            lines.append(f"target_compile_definitions({name} {scope} {' '.join(defines)})")
-        if compile_opts:
-            lines.append(f"target_compile_options({name} {scope} {' '.join(compile_opts)})")
-        if link_opts:
-            lines.append(f"target_link_options({name} {scope} {' '.join(link_opts)})")
-        if link_items:
-            lines.append(f"target_link_libraries({name} {scope} {' '.join(link_items)})")
 
-    if target.type in {"executable", "shared", "static", "object"}:
-        cmake_fn = {"executable": "add_executable", "shared": "add_library", "static": "add_library", "object": "add_library"}[
-            target.type
-        ]
-        libtype = ""
-        if target.type == "shared":
-            libtype = " SHARED"
-        elif target.type == "static":
-            libtype = " STATIC"
-        elif target.type == "object":
-            libtype = " OBJECT"
-        lines.append(f"{cmake_fn}({target.name}{libtype})")
-        if target.sources and target.type not in {"interface", "imported"}:
-            srcs = " ".join(f'"{_relativize(s.path, rel_dir)}"' for s in target.sources)
-            lines.append(f"target_sources({target.name} PRIVATE {srcs})")
-        _emit_usage_requirements(target.name)
-        if target.alias and target.type in {"shared", "static", "object"}:
-            lines.append(f"add_library({target.alias} ALIAS {target.name})")
-    elif target.type == "interface":
-        lines.append(f"add_library({target.name} INTERFACE)")
-        _emit_usage_requirements(target.name)
-        if target.alias:
-            lines.append(f"add_library({target.alias} ALIAS {target.name})")
-    elif target.type == "imported":
-        lines.append(f"add_library({target.name} UNKNOWN IMPORTED)")
-        _emit_usage_requirements(target.name)
-    else:
-        if diagnostics is not None:
-            add(diagnostics, "ERROR", "EMIT_UNKNOWN_TYPE", f"Unknown target type {target.type}")
-        uc = unknown_factory.create(
-            category="toolchain_specific",
-            file=rel_dir.as_posix(),
-            raw_snippet=target.type,
-            normalized_form=f"unknown_target_type:{target.type}",
-            context={"targets": [target.name]},
-            impact={"result": "target_not_generated"},
-            cmake_status="not_generated",
-            suggested_action="manual_review",
-        )
-        unknown_constructs.append(uc)
-        return RenderResult(rendered="# Unknown target type\n", unknown_constructs=unknown_constructs)
+def _render_custom_commands(target: Target, rel_dir: Path) -> List[str]:
+    lines: List[str] = []
+    for cc in target.custom_commands:
+        lines.append(f"# Custom command for {target.name}")
+        if not cc.commands:
+            continue
+        outputs_str = " ".join(f'"{_relativize(o, rel_dir)}"' for o in cc.outputs) if cc.outputs else target.name
+        inputs_str = " ".join(f'"{_relativize(i, rel_dir)}"' for i in cc.inputs) if cc.inputs else ""
+        command_str = " && ".join(cc.commands)
+        lines.append(f'add_custom_command(OUTPUT {outputs_str}')
+        if inputs_str:
+            lines.append(f'  DEPENDS {inputs_str}')
+        lines.append(f'  COMMAND {command_str})')
+    return lines
 
-    # Render custom commands attached to this target
-    if target.custom_commands:
-        for cc in target.custom_commands:
-            lines.append(f"# Custom command for {target.name}")
-            if cc.commands:
-                # Render as add_custom_command
-                outputs_str = " ".join(f'"{_relativize(o, rel_dir)}"' for o in cc.outputs) if cc.outputs else target.name
-                inputs_str = " ".join(f'"{_relativize(i, rel_dir)}"' for i in cc.inputs) if cc.inputs else ""
-                command_str = " && ".join(cc.commands)
-                lines.append(f'add_custom_command(OUTPUT {outputs_str}')
-                if inputs_str:
-                    lines.append(f'  DEPENDS {inputs_str}')
-                lines.append(f'  COMMAND {command_str})')
 
-    return RenderResult(rendered="\n".join(lines) + "\n", unknown_constructs=unknown_constructs)
+def _render_unknown(unknown_constructs: List[UnknownConstruct], uc: UnknownConstruct) -> RenderResult:
+    unknown_constructs.append(uc)
+    return RenderResult(rendered="# Unknown target type\n", unknown_constructs=unknown_constructs)
+
+
+def _usage_requirements(
+    name: str,
+    scope: str,
+    includes: List[str],
+    defines: List[str],
+    compile_opts: List[str],
+    link_opts: List[str],
+    link_items: List[str],
+    rel_dir: Path,
+) -> List[str]:
+    lines: List[str] = []
+    if includes:
+        parts = " ".join(f'"{_relativize(inc, rel_dir)}"' for inc in includes)
+        lines.append(f"target_include_directories({name} {scope} {parts})")
+    if defines:
+        lines.append(f"target_compile_definitions({name} {scope} {' '.join(defines)})")
+    if compile_opts:
+        lines.append(f"target_compile_options({name} {scope} {' '.join(compile_opts)})")
+    if link_opts:
+        lines.append(f"target_link_options({name} {scope} {' '.join(link_opts)})")
+    if link_items:
+        lines.append(f"target_link_libraries({name} {scope} {' '.join(link_items)})")
+    return lines
+
+
+def _render_binary_target(
+    target: Target,
+    rel_dir: Path,
+    scope: str,
+    includes: List[str],
+    defines: List[str],
+    compile_opts: List[str],
+    link_opts: List[str],
+    link_items: List[str],
+) -> List[str]:
+    cmake_fn = {"executable": "add_executable", "shared": "add_library", "static": "add_library", "object": "add_library"}[
+        target.type
+    ]
+    libtype = ""
+    if target.type == "shared":
+        libtype = " SHARED"
+    elif target.type == "static":
+        libtype = " STATIC"
+    elif target.type == "object":
+        libtype = " OBJECT"
+    lines = [f"{cmake_fn}({target.name}{libtype})"]
+    if target.sources and target.type not in {"interface", "imported"}:
+        srcs = " ".join(f'"{_relativize(s.path, rel_dir)}"' for s in target.sources)
+        lines.append(f"target_sources({target.name} PRIVATE {srcs})")
+    lines.extend(_usage_requirements(target.name, scope, includes, defines, compile_opts, link_opts, link_items, rel_dir))
+    if target.alias and target.type in {"shared", "static", "object"}:
+        lines.append(f"add_library({target.alias} ALIAS {target.name})")
+    return lines
+
+
+def _render_interface_target(
+    target: Target,
+    rel_dir: Path,
+    scope: str,
+    includes: List[str],
+    defines: List[str],
+    compile_opts: List[str],
+    link_opts: List[str],
+    link_items: List[str],
+) -> List[str]:
+    lines = [f"add_library({target.name} INTERFACE)"]
+    lines.extend(_usage_requirements(target.name, scope, includes, defines, compile_opts, link_opts, link_items, rel_dir))
+    if target.alias:
+        lines.append(f"add_library({target.alias} ALIAS {target.name})")
+    return lines
+
+
+def _render_imported_target(
+    target: Target,
+    rel_dir: Path,
+    scope: str,
+    includes: List[str],
+    defines: List[str],
+    compile_opts: List[str],
+    link_opts: List[str],
+    link_items: List[str],
+) -> List[str]:
+    lines = [f"add_library({target.name} UNKNOWN IMPORTED)"]
+    lines.extend(_usage_requirements(target.name, scope, includes, defines, compile_opts, link_opts, link_items, rel_dir))
+    return lines
+
+
+def _handle_unknown_target_type(
+    target: Target,
+    rel_dir: Path,
+    diagnostics: Optional[DiagnosticCollector],
+    unknown_factory: UnknownConstructFactory,
+    unknown_constructs: List[UnknownConstruct],
+) -> RenderResult:
+    if diagnostics is not None:
+        add(diagnostics, "ERROR", "EMIT_UNKNOWN_TYPE", f"Unknown target type {target.type}")
+    uc = unknown_factory.create(
+        category="toolchain_specific",
+        file=rel_dir.as_posix(),
+        raw_snippet=target.type,
+        normalized_form=f"unknown_target_type:{target.type}",
+        context={"targets": [target.name]},
+        impact={"result": "target_not_generated"},
+        cmake_status="not_generated",
+        suggested_action="manual_review",
+    )
+    return _render_unknown(unknown_constructs, uc)
 
 
 def render_packaging(project: Project, namespace: str, *, has_global_module: bool) -> Dict[str, str]:
@@ -375,19 +597,44 @@ def render_packaging(project: Project, namespace: str, *, has_global_module: boo
     version_name = f"{project.name}ConfigVersion.cmake"
     destination = f"lib/cmake/{project.name}"
     version_value = project.version or "0.1.0"
+
+    installable = _collect_installable_targets(project, namespace, has_global_module)
+    packaging_lines = _render_packaging_rules(project, installable, export_name, destination, config_name, version_name, has_global_module)
+    config_lines = _render_config_lines(project, namespace, has_global_module)
+    version_lines = _render_version_lines(version_value)
+
+    return {
+        PACKAGING_RULES_FILE: "\n".join(packaging_lines) + "\n",
+        config_name: "\n".join(config_lines) + "\n",
+        version_name: "\n".join(version_lines) + "\n",
+    }
+
+
+def _collect_installable_targets(project: Project, namespace: str, has_global_module: bool) -> List[str]:
     installable = sorted({t.name for t in project.targets if t.type in {"shared", "static", "executable", "interface", "object"}})
-    global_interface = None
     if has_global_module and (project.project_config.includes or project.project_config.defines or project.project_config.flags):
         global_interface, _ = _global_interface_names(namespace)
         installable = sorted(set(installable + [global_interface]))
+    return installable
+
+
+def _render_packaging_rules(
+    project: Project,
+    installable: List[str],
+    export_name: str,
+    destination: str,
+    config_name: str,
+    version_name: str,
+    has_global_module: bool,
+) -> List[str]:
     packaging_lines = [f"# Packaging for {project.name}"]
     if installable:
         packaging_lines.append(f"install(TARGETS {' '.join(installable)} EXPORT {export_name})")
     packaging_lines.append(
-        f"install(EXPORT {export_name} NAMESPACE {namespace}:: DESTINATION {destination} FILE {project.name}Targets.cmake)"
+        f"install(EXPORT {export_name} NAMESPACE {project.namespace}:: DESTINATION {destination} FILE {project.name}Targets.cmake)"
     )
     packaging_lines.append(
-        f"export(EXPORT {export_name} FILE \"${{CMAKE_CURRENT_BINARY_DIR}}/{project.name}Targets.cmake\" NAMESPACE {namespace}::)"
+        f"export(EXPORT {export_name} FILE \"${{CMAKE_CURRENT_BINARY_DIR}}/{project.name}Targets.cmake\" NAMESPACE {project.namespace}::)"
     )
     files_to_install = [config_name, version_name]
     if has_global_module:
@@ -397,13 +644,20 @@ def render_packaging(project: Project, namespace: str, *, has_global_module: boo
         + " ".join(f"${{CMAKE_CURRENT_LIST_DIR}}/{fname}" for fname in files_to_install)
         + f" DESTINATION {destination})"
     )
+    return packaging_lines
 
+
+def _render_config_lines(project: Project, namespace: str, has_global_module: bool) -> List[str]:
     config_lines = [f"# Config for {project.name}"]
     if has_global_module:
         config_lines.append(f'include("${{CMAKE_CURRENT_LIST_DIR}}/{GLOBAL_MODULE_NAME}")')
     config_lines.append(f'include("${{CMAKE_CURRENT_LIST_DIR}}/{project.name}Targets.cmake")')
     config_lines.append(f'set({project.name.upper()}_NAMESPACE "{namespace}::")')
-    version_lines = [
+    return config_lines
+
+
+def _render_version_lines(version_value: str) -> List[str]:
+    return [
         f'set(PACKAGE_VERSION "{version_value}")',
         "if(PACKAGE_FIND_VERSION)",
         "  if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION)",
@@ -416,11 +670,6 @@ def render_packaging(project: Project, namespace: str, *, has_global_module: boo
         "  endif()",
         "endif()",
     ]
-    return {
-        PACKAGING_RULES_FILE: "\n".join(packaging_lines) + "\n",
-        config_name: "\n".join(config_lines) + "\n",
-        version_name: "\n".join(version_lines) + "\n",
-    }
 
 
 def plan_file_layout(project: Project, output_dir: Path) -> Dict[Path, List[Target]]:

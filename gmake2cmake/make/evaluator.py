@@ -158,35 +158,52 @@ def expand_variables(
     seen = set()
     auto_vars = auto_vars or {}
     while i < len(value):
-        if value[i] == "$" and i + 1 < len(value) and value[i + 1] not in {"(", "{"}:
-            var_key = value[i + 1]
-            result += auto_vars.get(var_key, env.get(var_key))
-            i += 2
+        if value[i] == "$":
+            chunk, i = _consume_variable_ref(
+                value, i, env, auto_vars, location, diagnostics, seen, unknown_factory, facts
+            )
+            result += chunk
             continue
-        if value[i] == "$" and i + 1 < len(value) and value[i + 1] in {"(", "{"}:
-            end = value.find(")", i + 2) if value[i + 1] == "(" else value.find("}", i + 2)
-            if end == -1:
-                add(diagnostics, "ERROR", "EVAL_RECURSIVE_LOOP", f"Unclosed variable at {location.path}:{location.line}")
-                break
-            var_name = value[i + 2 : end]
-            if var_name in seen:
-                add(diagnostics, "ERROR", "EVAL_RECURSIVE_LOOP", f"Recursive variable {var_name} at {location.path}:{location.line}")
-                break
-            seen.add(var_name)
-            replacement, was_func = _replace_var(var_name, env, auto_vars)
-            if was_func:
-                add(
-                    diagnostics,
-                    "WARN",
-                    "UNKNOWN_CONSTRUCT",
-                    f"{_register_unknown('make_function', var_name, location, unknown_factory, facts)} Unsupported make function",
-                )
-            result += replacement
-            i = end + 1
-        else:
-            result += value[i]
-            i += 1
+        result += value[i]
+        i += 1
     return result
+
+
+def _consume_variable_ref(
+    value: str,
+    index: int,
+    env: VariableEnv,
+    auto_vars: Dict[str, str],
+    location: parser.SourceLocation,
+    diagnostics: DiagnosticCollector,
+    seen: set[str],
+    unknown_factory: Optional[UnknownConstructFactory],
+    facts: Optional[BuildFacts],
+) -> tuple[str, int]:
+    if index + 1 >= len(value):
+        return value[index], index + 1
+    next_char = value[index + 1]
+    if next_char not in {"(", "{"}:
+        var_key = next_char
+        return auto_vars.get(var_key, env.get(var_key)), index + 2
+    end = value.find(")", index + 2) if next_char == "(" else value.find("}", index + 2)
+    if end == -1:
+        add(diagnostics, "ERROR", "EVAL_RECURSIVE_LOOP", f"Unclosed variable at {location.path}:{location.line}")
+        return "", len(value)
+    var_name = value[index + 2 : end]
+    if var_name in seen:
+        add(diagnostics, "ERROR", "EVAL_RECURSIVE_LOOP", f"Recursive variable {var_name} at {location.path}:{location.line}")
+        return "", end + 1
+    seen.add(var_name)
+    replacement, was_func = _replace_var(var_name, env, auto_vars)
+    if was_func:
+        add(
+            diagnostics,
+            "WARN",
+            "UNKNOWN_CONSTRUCT",
+            f"{_register_unknown('make_function', var_name, location, unknown_factory, facts)} Unsupported make function",
+        )
+    return replacement, end + 1
 
 
 def expand_rule(
@@ -225,31 +242,64 @@ def infer_compiles(rules: List[EvaluatedRule], config: ConfigModel, diagnostics:
     compiles: List[InferredCompile] = []
     for rule in rules:
         for cmd in rule.commands:
-            if not _looks_like_compile(cmd.expanded):
-                continue
-            src = _extract_flag(cmd.expanded, "-c") or (rule.prerequisites[0] if rule.prerequisites else "")
-            out = _extract_flag(cmd.expanded, "-o") or (rule.targets[0] if rule.targets else "")
-            includes = _extract_flags(cmd.expanded, "-I")
-            defines = _extract_flags(cmd.expanded, "-D")
-            if should_ignore_path(src, config) or should_ignore_path(out, config):
-                continue
-            if not src:
-                add(diagnostics, "WARN", "EVAL_NO_SOURCE", f"Could not infer source for rule at {cmd.location.path}:{cmd.location.line}")
-            lang = _guess_lang(cmd.expanded, src)
-            skip_flags = set(includes + defines + ["-c"])
-            flags = [f for f in cmd.expanded.split() if f.startswith("-") and f not in skip_flags and not f.startswith("-o")]
-            compiles.append(
-                InferredCompile(
-                    source=src,
-                    output=out,
-                    language=lang,
-                    flags=flags,
-                    includes=includes,
-                    defines=defines,
-                    location=cmd.location,
-                )
-            )
+            inferred = _infer_compile_from_command(rule, cmd, config, diagnostics)
+            if inferred:
+                compiles.append(inferred)
     return compiles
+
+
+def _infer_compile_from_command(
+    rule: EvaluatedRule, cmd: EvaluatedCommand, config: ConfigModel, diagnostics: DiagnosticCollector
+) -> Optional[InferredCompile]:
+    if not _looks_like_compile(cmd.expanded):
+        return None
+    src, out = _parse_compile_paths(rule, cmd)
+    includes, defines = _extract_includes_defines(cmd.expanded)
+    if _should_skip_compile(src, out, config, diagnostics, cmd.location):
+        return None
+    lang = _guess_lang(cmd.expanded, src)
+    flags = _remaining_flags(cmd.expanded, includes, defines)
+    return InferredCompile(
+        source=src,
+        output=out,
+        language=lang,
+        flags=flags,
+        includes=includes,
+        defines=defines,
+        location=cmd.location,
+    )
+
+
+def _parse_compile_paths(rule: EvaluatedRule, cmd: EvaluatedCommand) -> Tuple[str, str]:
+    src = _extract_flag(cmd.expanded, "-c") or (rule.prerequisites[0] if rule.prerequisites else "")
+    out = _extract_flag(cmd.expanded, "-o") or (rule.targets[0] if rule.targets else "")
+    return src, out
+
+
+def _extract_includes_defines(cmd: str) -> Tuple[List[str], List[str]]:
+    includes = _extract_flags(cmd, "-I")
+    defines = _extract_flags(cmd, "-D")
+    return includes, defines
+
+
+def _should_skip_compile(
+    src: str,
+    out: str,
+    config: ConfigModel,
+    diagnostics: DiagnosticCollector,
+    location: parser.SourceLocation,
+) -> bool:
+    if should_ignore_path(src, config) or should_ignore_path(out, config):
+        return True
+    if src:
+        return False
+    add(diagnostics, "WARN", "EVAL_NO_SOURCE", f"Could not infer source for rule at {location.path}:{location.line}")
+    return False
+
+
+def _remaining_flags(cmd: str, includes: List[str], defines: List[str]) -> List[str]:
+    skip_flags = set(includes + defines + ["-c"])
+    return [f for f in cmd.split() if f.startswith("-") and f not in skip_flags and not f.startswith("-o")]
 
 
 def _looks_like_compile(cmd: str) -> bool:
