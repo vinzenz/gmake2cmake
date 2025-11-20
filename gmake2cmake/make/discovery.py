@@ -54,8 +54,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
             add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {path}: {exc}")
         for line in lines:
             stripped = line.strip()
-            if not stripped.startswith("include") and " $(MAKE) -C " not in stripped:
-                continue
+            # Check for include statements
             if stripped.startswith("include") or stripped.startswith("-include"):
                 optional = stripped.startswith("-include")
                 parts = stripped.split()[1:]
@@ -68,10 +67,13 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                         add(diagnostics, "ERROR", "DISCOVERY_INCLUDE_MISSING", f"Missing include {child} from {path}")
                     else:
                         add(diagnostics, "WARN", "DISCOVERY_INCLUDE_OPTIONAL_MISSING", f"Optional include missing {child}")
-            if "$(MAKE) -C" in stripped:
-                # naive capture of directory after -C
+            # Check for recursive make patterns $(MAKE) -C subdir
+            if "$(MAKE)" in stripped and " -C " in stripped:
+                # Extract directory after -C flag
                 try:
                     dir_part = stripped.split("-C", 1)[1].strip().split()[0]
+                    # Remove variable references if present (e.g., $(VAR) becomes VAR)
+                    dir_part = dir_part.replace("$(", "").replace(")", "").replace("${", "").replace("}", "")
                     child_path = (path.parent / dir_part / "Makefile").resolve()
                     _record_edge(graph, node, child_path.as_posix())
                     if fs.exists(child_path):
@@ -79,7 +81,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                     else:
                         add(diagnostics, "WARN", "DISCOVERY_SUBDIR_MISSING", f"Subdir Makefile missing at {child_path}")
                 except Exception:
-                    continue
+                    pass
         visited_stack.pop()
 
     dfs(entry)

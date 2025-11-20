@@ -426,8 +426,25 @@ def _register_unknown(
     factory: Optional[UnknownConstructFactory],
     facts: Optional[BuildFacts],
 ) -> str:
+    """Register an unknown construct and return a location prefix for diagnostic messages.
+
+    Args:
+        category: Category of the unknown construct
+        snippet: The raw snippet of code that couldn't be handled
+        location: Source location where the construct appears
+        factory: Optional factory to create UnknownConstruct instances
+        facts: Optional BuildFacts to accumulate unknowns in
+
+    Returns:
+        A location prefix string (e.g., "UNKNOWN_001 at Makefile:42:") for use in messages.
+        If factory or facts is None, returns just the location in format "at Makefile:line:".
+    """
+    loc_str = f"{location.path}:{location.line}"
+
     if factory is None or facts is None:
-        return ""
+        # When factory/facts not provided, still include location information
+        return f"at {loc_str}:"
+
     uc = factory.create(
         category=category,
         file=location.path,
@@ -437,8 +454,7 @@ def _register_unknown(
         normalized_form=snippet,
         context={"variables_in_scope": list(facts.project_globals.vars.keys())},
         impact={"phase": "evaluate", "severity": "warning"},
-        suggested_action="requires_mapping",
+        suggested_action="manual_review",
     )
     facts.unknown_constructs.append(uc)
-    loc_str = f"{location.path}:{location.line}"
     return f"{uc.id} at {loc_str}:"

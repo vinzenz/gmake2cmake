@@ -95,3 +95,27 @@ def test_unsupported_function_diagnostic():
     facts = evaluator.evaluate_ast(ast, evaluator.VariableEnv(), ConfigModel(), diagnostics, unknown_factory=UnknownConstructFactory())
     assert any(d.code == "UNKNOWN_CONSTRUCT" for d in diagnostics.diagnostics)
     assert facts.unknown_constructs and facts.unknown_constructs[0].category == "make_function"
+
+
+def test_unsupported_function_diagnostic_includes_location():
+    """Test that diagnostic messages always include clear location information."""
+    ast = [
+        parser.VariableAssign(
+            name="LIST", value="$(call DEFINE_RULE,$(target))", kind="simple", location=parser.SourceLocation("Makefile", 42, 10)
+        ),
+    ]
+    diagnostics = DiagnosticCollector()
+    # Evaluate with default factory (which is created automatically)
+    facts = evaluator.evaluate_ast(ast, evaluator.VariableEnv(), ConfigModel(), diagnostics)
+    # Diagnostic should be emitted with location info
+    diag = next((d for d in diagnostics.diagnostics if d.code == "UNKNOWN_CONSTRUCT"), None)
+    assert diag is not None
+    # Message should contain location information and unknown construct ID
+    assert "Makefile" in diag.message
+    assert "42" in diag.message
+    assert diag.message.startswith("UC")  # Should start with unknown construct ID
+    # Unknown constructs should be recorded
+    assert len(facts.unknown_constructs) > 0
+    uc = facts.unknown_constructs[0]
+    assert uc.file == "Makefile"
+    assert uc.line == 42

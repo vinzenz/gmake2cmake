@@ -7,6 +7,11 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+from gmake2cmake.constants import (
+    VALID_CONFIG_TARGET_TYPES,
+    VALID_LINK_CLASSIFICATIONS,
+    VALID_VISIBILITY_LEVELS,
+)
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.fs import FileSystemAdapter
 
@@ -19,6 +24,19 @@ def _sanitize_namespace(name: Optional[str]) -> Optional[str]:
 
 @dataclass
 class TargetMapping:
+    """Configuration for mapping Make target to CMake target.
+
+    Attributes:
+        src_name: Original Make target name
+        dest_name: Target name in generated CMake
+        type_override: Override target type (e.g., 'executable', 'library')
+        link_libs: Additional libraries to link
+        include_dirs: Additional include directories
+        defines: Additional preprocessor defines
+        options: Additional CMake options
+        visibility: Visibility level (e.g., 'PUBLIC', 'PRIVATE')
+    """
+
     src_name: str
     dest_name: str
     type_override: Optional[str] = None
@@ -28,12 +46,28 @@ class TargetMapping:
     options: List[str] = field(default_factory=list)
     visibility: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        if not self.src_name or not self.src_name.strip():
+            raise ValueError("src_name cannot be empty")
+        if not self.dest_name or not self.dest_name.strip():
+            raise ValueError("dest_name cannot be empty")
+        if self.type_override is not None and self.type_override not in VALID_CONFIG_TARGET_TYPES:
+            raise ValueError(f"Invalid type_override: {self.type_override}")
+        if self.visibility is not None and self.visibility not in VALID_VISIBILITY_LEVELS:
+            raise ValueError(f"Invalid visibility: {self.visibility}")
+
 
 @dataclass
 class CustomRuleConfig:
     match: str
     handler: str
     cmake_stub: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.match or not self.match.strip():
+            raise ValueError("match cannot be empty")
+        if not self.handler or not self.handler.strip():
+            raise ValueError("handler cannot be empty")
 
 
 @dataclass
@@ -42,9 +76,32 @@ class LinkOverride:
     alias: Optional[str] = None
     imported_target: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        if not self.classification or not self.classification.strip():
+            raise ValueError("classification cannot be empty")
+        if self.classification not in VALID_LINK_CLASSIFICATIONS:
+            raise ValueError(f"Invalid classification: {self.classification}")
+
 
 @dataclass
 class ConfigModel:
+    """Configuration model for gmake2cmake conversion.
+
+    Attributes:
+        project_name: CMake project name
+        version: Project version string
+        namespace: C++ namespace for generated code
+        languages: Languages to enable in CMake (e.g., ['C', 'CXX'])
+        target_mappings: Mapping of Make targets to CMake targets
+        flag_mappings: Mapping of compiler flags
+        ignore_paths: Paths to ignore during discovery
+        custom_rules: Custom rule handlers
+        global_config_files: Global config files to process (e.g., config.mk)
+        link_overrides: Library classification overrides
+        packaging_enabled: If True, generate install/export/package files
+        strict: If True, treat unknown config keys as errors
+    """
+
     project_name: Optional[str] = None
     version: Optional[str] = None
     namespace: Optional[str] = None
@@ -57,15 +114,26 @@ class ConfigModel:
     link_overrides: Dict[str, LinkOverride] = field(default_factory=dict)
     packaging_enabled: bool = False
     strict: bool = False
+    error_recovery_enabled: bool = True
 
 
 def load_yaml(path: Path, *, fs: FileSystemAdapter, diagnostics: DiagnosticCollector) -> Dict:
+    """Load and parse YAML configuration file.
+
+    Args:
+        path: Path to YAML configuration file
+        fs: File system adapter for reading
+        diagnostics: Collector for error/warning diagnostics
+
+    Returns:
+        Parsed dictionary, or empty dict if file not found or parsing fails
+    """
     if not fs.exists(path):
         add(diagnostics, "ERROR", "CONFIG_MISSING", f"Config file not found: {path}")
         return {}
     try:
         raw_text = fs.read_text(path)
-    except Exception as exc:  # pragma: no cover - IO error path
+    except (IOError, OSError) as exc:  # pragma: no cover - IO error path
         add(diagnostics, "ERROR", "CONFIG_READ_FAIL", f"Failed to read config: {exc}")
         return {}
     try:
@@ -80,6 +148,16 @@ def load_yaml(path: Path, *, fs: FileSystemAdapter, diagnostics: DiagnosticColle
 
 
 def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> ConfigModel:
+    """Parse raw dictionary into ConfigModel with validation.
+
+    Args:
+        raw: Raw configuration dictionary
+        strict: If True, treat unknown keys as errors
+        diagnostics: Collector for validation diagnostics
+
+    Returns:
+        ConfigModel instance with parsed configuration
+    """
     model = ConfigModel()
     allowed_keys = {
         "project_name",
@@ -94,14 +172,35 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
         "link_overrides",
         "packaging_enabled",
         "strict",
+        "error_recovery_enabled",
     }
     for key in list(raw.keys()):
         if key not in allowed_keys:
             severity = "ERROR" if strict else "WARN"
             add(diagnostics, severity, "CONFIG_UNKNOWN_KEY", f"Unknown config key: {key}")
-    model.project_name = raw.get("project_name")
-    model.version = raw.get("version")
-    model.namespace = _sanitize_namespace(raw.get("namespace") or raw.get("project_name"))
+
+    # Validate and extract project_name with type checking
+    project_name = raw.get("project_name")
+    if project_name is not None and not isinstance(project_name, str):
+        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"project_name must be a string, got {type(project_name).__name__}")
+        project_name = None
+    model.project_name = project_name
+
+    # Validate and extract version with type checking
+    version = raw.get("version")
+    if version is not None and not isinstance(version, str):
+        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"version must be a string, got {type(version).__name__}")
+        version = None
+    model.version = version
+
+    # Extract namespace, ensuring it's a string before sanitizing
+    namespace = raw.get("namespace")
+    if namespace is not None and not isinstance(namespace, str):
+        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"namespace must be a string, got {type(namespace).__name__}")
+        namespace = None
+    if not namespace:
+        namespace = project_name if isinstance(project_name, str) else None
+    model.namespace = _sanitize_namespace(namespace)
     model.languages = raw.get("languages")
     model.flag_mappings = dict(raw.get("flag_mappings", {}) or {})
     model.ignore_paths = _normalize_ignore_paths(raw.get("ignore_paths", []))
@@ -111,13 +210,34 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
     model.link_overrides = _parse_link_overrides(raw.get("link_overrides", {}), diagnostics, strict)
     model.packaging_enabled = bool(raw.get("packaging_enabled", False))
     model.strict = bool(raw.get("strict", strict))
+    model.error_recovery_enabled = bool(raw.get("error_recovery_enabled", True))
+    # Disable recovery if strict mode is enabled
+    if model.strict:
+        model.error_recovery_enabled = False
     return model
 
 
 def _normalize_ignore_paths(paths: List[str]) -> List[str]:
+    """Normalize ignore paths with validation.
+
+    Args:
+        paths: List of path patterns to normalize.
+
+    Returns:
+        List of normalized paths without duplicates.
+
+    Raises:
+        ValueError: If any path contains invalid patterns like '..' or is empty.
+    """
     seen = set()
     normalized: List[str] = []
     for p in paths:
+        # Validate input
+        if not p or not p.strip():
+            raise ValueError("Path pattern cannot be empty")
+        if ".." in p:
+            raise ValueError(f"Path traversal (..) not allowed in pattern: {p}")
+
         norm = p.replace("\\", "/").rstrip("/")
         if norm in seen:
             continue
@@ -185,6 +305,9 @@ def load_and_merge(args, diagnostics: DiagnosticCollector, fs: FileSystemAdapter
     raw = {}
     if getattr(args, "config_path", None):
         raw = load_yaml(Path(args.config_path), fs=fs, diagnostics=diagnostics)
+        # Validate loaded config against schema
+        from gmake2cmake.schema_validator import validate_config_schema
+        validate_config_schema(raw, diagnostics)
     model = parse_model(raw, bool(getattr(args, "strict", False)), diagnostics)
     if args and getattr(args, "with_packaging", False):
         model.packaging_enabled = True
@@ -196,7 +319,7 @@ def load_and_merge(args, diagnostics: DiagnosticCollector, fs: FileSystemAdapter
 def _infer_project_name(args) -> Optional[str]:
     try:
         return Path(args.source_dir).resolve().name
-    except Exception:  # pragma: no cover - defensive fallback
+    except (OSError, ValueError):  # pragma: no cover - defensive fallback for path resolution
         return None
 
 

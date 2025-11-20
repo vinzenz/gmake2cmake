@@ -3,11 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from gmake2cmake.constants import VALID_CMAKE_STATUSES, VALID_SUGGESTED_ACTIONS
 
-def _truncate(text: str, max_len: int = 160) -> str:
+# Named constants for truncation and ID formatting
+DEFAULT_TRUNCATE_LENGTH = 160
+ELLIPSIS = "..."
+UC_ID_FORMAT = "UC{counter:04d}"
+
+
+def _truncate(text: str, max_len: int = DEFAULT_TRUNCATE_LENGTH) -> str:
     if len(text) <= max_len:
         return text
-    return text[: max_len - 3] + "..."
+    return text[: max_len - len(ELLIPSIS)] + ELLIPSIS
 
 
 def _fallback_normalized(raw: str, normalized: Optional[str]) -> str:
@@ -17,7 +24,7 @@ def _fallback_normalized(raw: str, normalized: Optional[str]) -> str:
 
 
 def _format_uc_id(counter: int) -> str:
-    return f"UC{counter:04d}"
+    return UC_ID_FORMAT.format(counter=counter)
 
 
 @dataclass
@@ -33,6 +40,18 @@ class UnknownConstruct:
     impact: Dict[str, str] = field(default_factory=dict)
     cmake_status: str = "not_generated"
     suggested_action: str = "manual_review"
+
+    def __post_init__(self) -> None:
+        if not self.id or not self.id.strip():
+            raise ValueError("id cannot be empty")
+        if not self.category or not self.category.strip():
+            raise ValueError("category cannot be empty")
+        if not self.file or not self.file.strip():
+            raise ValueError("file cannot be empty")
+        if self.cmake_status not in VALID_CMAKE_STATUSES:
+            raise ValueError(f"Invalid cmake_status: {self.cmake_status}")
+        if self.suggested_action not in VALID_SUGGESTED_ACTIONS:
+            raise ValueError(f"Invalid suggested_action: {self.suggested_action}")
 
 
 class UnknownConstructFactory:

@@ -1,0 +1,180 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "gmake2cmake Configuration Schema",
+  "description": "Configuration schema for Makefile to CMake conversion",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "description": "CMake project name",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "Project version string",
+      "pattern": "^[0-9]+(\\.[0-9]+)*(-[a-zA-Z0-9]+)?$"
+    },
+    "namespace": {
+      "type": "string",
+      "description": "C++ namespace for generated code",
+      "minLength": 1
+    },
+    "languages": {
+      "type": "array",
+      "description": "Languages to enable in CMake",
+      "items": {
+        "type": "string",
+        "enum": ["C", "CXX", "ASM", "RC"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "target_mappings": {
+      "type": "object",
+      "description": "Mapping of Make targets to CMake targets",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dest_name": {
+            "type": "string",
+            "description": "Target name in generated CMake",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Alternative name field (legacy)",
+            "minLength": 1
+          },
+          "type_override": {
+            "type": "string",
+            "description": "Override target type",
+            "enum": ["executable", "library", "static", "shared", "object", "imported"]
+          },
+          "link_libs": {
+            "type": "array",
+            "description": "Additional libraries to link",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_dirs": {
+            "type": "array",
+            "description": "Additional include directories",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defines": {
+            "type": "array",
+            "description": "Additional preprocessor defines",
+            "items": {
+              "type": "string"
+            }
+          },
+          "options": {
+            "type": "array",
+            "description": "Additional CMake options",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Visibility level",
+            "enum": ["PUBLIC", "PRIVATE", "INTERFACE"]
+          }
+        },
+        "required": []
+      }
+    },
+    "flag_mappings": {
+      "type": "object",
+      "description": "Mapping of compiler flags",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "ignore_paths": {
+      "type": "array",
+      "description": "Paths to ignore during discovery",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "custom_rules": {
+      "type": "object",
+      "description": "Custom rule handlers",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "match": {
+            "type": "string",
+            "description": "Pattern to match",
+            "minLength": 1
+          },
+          "handler": {
+            "type": "string",
+            "description": "Handler module path",
+            "minLength": 1
+          },
+          "cmake_stub": {
+            "type": "string",
+            "description": "CMake code snippet"
+          }
+        },
+        "required": ["handler"]
+      }
+    },
+    "global_config_files": {
+      "type": "array",
+      "description": "Global config files to process",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "link_overrides": {
+      "type": "object",
+      "description": "Library classification overrides",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "type": "string",
+            "description": "Library classification",
+            "enum": ["internal", "external", "imported"]
+          },
+          "alias": {
+            "type": "string",
+            "description": "Target alias"
+          },
+          "imported_target": {
+            "type": "string",
+            "description": "Imported target name"
+          }
+        },
+        "required": ["classification"]
+      }
+    },
+    "packaging_enabled": {
+      "type": "boolean",
+      "description": "Enable install/export/package file generation",
+      "default": false
+    },
+    "strict": {
+      "type": "boolean",
+      "description": "Treat unknown config keys as errors",
+      "default": false
+    },
+    "error_recovery_enabled": {
+      "type": "boolean",
+      "description": "Enable error recovery during conversion",
+      "default": true
+    }
+  }
+}

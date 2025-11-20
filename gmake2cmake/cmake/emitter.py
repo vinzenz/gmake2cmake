@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.fs import FileSystemAdapter
 from gmake2cmake.ir.builder import Project, Target
+from gmake2cmake.ir.unknowns import UnknownConstruct, UnknownConstructFactory
 
 GLOBAL_MODULE_NAME = "ProjectGlobalConfig.cmake"
 PACKAGING_RULES_FILE = "Packaging.cmake"
@@ -19,6 +20,18 @@ class GeneratedFile:
 
 
 @dataclass
+class EmitResult:
+    generated_files: List[GeneratedFile]
+    unknown_constructs: List[UnknownConstruct]
+
+
+@dataclass
+class RenderResult:
+    rendered: str
+    unknown_constructs: List[UnknownConstruct]
+
+
+@dataclass
 class EmitOptions:
     dry_run: bool
     packaging: bool
@@ -26,6 +39,9 @@ class EmitOptions:
 
 
 def _usage_scope(target: Target) -> str:
+    # Use target's explicit visibility if set, otherwise default based on type
+    if target.visibility:
+        return target.visibility
     if target.type in {"interface", "imported"}:
         return "INTERFACE"
     if target.type == "executable":
@@ -70,9 +86,19 @@ def _global_interface_names(namespace: str) -> Tuple[str, str]:
     return physical, alias
 
 
-def emit(project: Project, output_dir: Path, *, options: EmitOptions, fs: FileSystemAdapter, diagnostics: DiagnosticCollector) -> List[GeneratedFile]:
+def emit(
+    project: Project,
+    output_dir: Path,
+    *,
+    options: EmitOptions,
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+    unknown_factory: Optional[UnknownConstructFactory] = None,
+) -> EmitResult:
+    unknown_factory = unknown_factory or UnknownConstructFactory()
     layout = plan_file_layout(project, output_dir)
     generated: List[GeneratedFile] = []
+    unknown_constructs: List[UnknownConstruct] = []
     alias_lookup = _build_alias_lookup(project.targets)
     has_global_module = bool(
         project.project_config.vars
@@ -113,7 +139,7 @@ def emit(project: Project, output_dir: Path, *, options: EmitOptions, fs: FileSy
             rel = Path(dirpath).name
         subdirs.append(rel)
     subdirs = sorted(set(subdirs))
-    root_content = render_root(
+    root_result = render_root(
         project,
         subdirs,
         options=options,
@@ -121,7 +147,10 @@ def emit(project: Project, output_dir: Path, *, options: EmitOptions, fs: FileSy
         global_link=global_interface_alias,
         alias_lookup=alias_lookup,
         diagnostics=diagnostics,
+        unknown_factory=unknown_factory,
     )
+    root_content = root_result.rendered
+    unknown_constructs.extend(root_result.unknown_constructs)
     root_path = output_dir / "CMakeLists.txt"
     generated.append(GeneratedFile(path=root_path.as_posix(), content=root_content))
     if not options.dry_run:
@@ -136,17 +165,20 @@ def emit(project: Project, output_dir: Path, *, options: EmitOptions, fs: FileSy
         path = rel_dir / "CMakeLists.txt"
         if rel_dir == output_dir:
             continue
-        content = "\n".join(
-            render_target(
+        rendered_targets = []
+        for target in targets:
+            result = render_target(
                 target,
                 rel_dir,
                 options.namespace,
                 alias_lookup=alias_lookup,
                 global_link=global_interface_alias,
                 diagnostics=diagnostics,
+                unknown_factory=unknown_factory,
             )
-            for target in targets
-        )
+            rendered_targets.append(result.rendered)
+            unknown_constructs.extend(result.unknown_constructs)
+        content = "\n".join(rendered_targets)
         generated.append(GeneratedFile(path=path.as_posix(), content=content))
         if not options.dry_run:
             try:
@@ -167,7 +199,7 @@ def emit(project: Project, output_dir: Path, *, options: EmitOptions, fs: FileSy
                 except Exception as exc:  # pragma: no cover
                     add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {full_path}: {exc}")
 
-    return generated
+    return EmitResult(generated_files=generated, unknown_constructs=unknown_constructs)
 
 
 def render_root(
@@ -179,7 +211,10 @@ def render_root(
     global_link: Optional[str],
     alias_lookup: Dict[str, str],
     diagnostics: Optional[DiagnosticCollector] = None,
-) -> str:
+    unknown_factory: Optional[UnknownConstructFactory] = None,
+) -> RenderResult:
+    unknown_factory = unknown_factory or UnknownConstructFactory()
+    unknown_constructs: List[UnknownConstruct] = []
     lines = [
         "cmake_minimum_required(VERSION 3.20)",
         f'project({project.name} LANGUAGES {" ".join(project.languages)})',
@@ -190,19 +225,20 @@ def render_root(
         lines.append(f'add_subdirectory("{sub}")')
     for target in project.targets:
         if target.sources and Path(target.sources[0].path).parent.as_posix() == ".":
-            lines.append(
-                render_target(
-                    target,
-                    Path("."),
-                    options.namespace,
-                    alias_lookup=alias_lookup,
-                    global_link=global_link,
-                    diagnostics=diagnostics,
-                )
+            result = render_target(
+                target,
+                Path("."),
+                options.namespace,
+                alias_lookup=alias_lookup,
+                global_link=global_link,
+                diagnostics=diagnostics,
+                unknown_factory=unknown_factory,
             )
+            lines.append(result.rendered)
+            unknown_constructs.extend(result.unknown_constructs)
     if options.packaging:
         lines.append(f'include("${{CMAKE_CURRENT_LIST_DIR}}/{PACKAGING_RULES_FILE}")')
-    return "\n".join(lines) + "\n"
+    return RenderResult(rendered="\n".join(lines) + "\n", unknown_constructs=unknown_constructs)
 
 
 def render_global_module(project_config, namespace: str, *, interface_name: str, alias: str) -> str:
@@ -242,7 +278,10 @@ def render_target(
     alias_lookup: Optional[Dict[str, str]] = None,
     global_link: Optional[str] = None,
     diagnostics: Optional[DiagnosticCollector] = None,
-) -> str:
+    unknown_factory: Optional[UnknownConstructFactory] = None,
+) -> RenderResult:
+    unknown_factory = unknown_factory or UnknownConstructFactory()
+    unknown_constructs: List[UnknownConstruct] = []
     lines: List[str] = []
     scope = _usage_scope(target)
     link_items: List[str] = []
@@ -300,8 +339,34 @@ def render_target(
     else:
         if diagnostics is not None:
             add(diagnostics, "ERROR", "EMIT_UNKNOWN_TYPE", f"Unknown target type {target.type}")
-        return "# Unknown target type\n"
-    return "\n".join(lines) + "\n"
+        uc = unknown_factory.create(
+            category="toolchain_specific",
+            file=rel_dir.as_posix(),
+            raw_snippet=target.type,
+            normalized_form=f"unknown_target_type:{target.type}",
+            context={"targets": [target.name]},
+            impact={"result": "target_not_generated"},
+            cmake_status="not_generated",
+            suggested_action="manual_review",
+        )
+        unknown_constructs.append(uc)
+        return RenderResult(rendered="# Unknown target type\n", unknown_constructs=unknown_constructs)
+
+    # Render custom commands attached to this target
+    if target.custom_commands:
+        for cc in target.custom_commands:
+            lines.append(f"# Custom command for {target.name}")
+            if cc.commands:
+                # Render as add_custom_command
+                outputs_str = " ".join(f'"{_relativize(o, rel_dir)}"' for o in cc.outputs) if cc.outputs else target.name
+                inputs_str = " ".join(f'"{_relativize(i, rel_dir)}"' for i in cc.inputs) if cc.inputs else ""
+                command_str = " && ".join(cc.commands)
+                lines.append(f'add_custom_command(OUTPUT {outputs_str}')
+                if inputs_str:
+                    lines.append(f'  DEPENDS {inputs_str}')
+                lines.append(f'  COMMAND {command_str})')
+
+    return RenderResult(rendered="\n".join(lines) + "\n", unknown_constructs=unknown_constructs)
 
 
 def render_packaging(project: Project, namespace: str, *, has_global_module: bool) -> Dict[str, str]:
