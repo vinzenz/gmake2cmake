@@ -25,6 +25,7 @@
 
 ## Commit & Pull Request Guidelines
 - Commit messages: concise imperative (“Add emitter packaging hooks”). Group related changes; avoid mixing refactors and features without note.
+- Use `git commit -s` (Signed-off-by) for all commits. Initial state already committed; every finished task needs its own signed-off commit.
 - PRs should describe scope, testing (`pytest`, `ruff`), and link to tasks/issues. Include expected outputs for CMake generation changes when possible.
 - After completing a task, move its file to `tasks/archive/` and add new tasks derived from `whats-next.md` as needed.
 
