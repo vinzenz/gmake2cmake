@@ -503,6 +503,8 @@ class LocalFS:
 class TestFileSystemAdapter:
     """In-memory virtual filesystem for unit testing with deterministic behavior."""
 
+    __test__ = False  # prevent pytest from collecting this helper as a test class
+
     files: Dict[str, str] = field(default_factory=dict)
     """Mapping of normalized paths to file contents."""
 
