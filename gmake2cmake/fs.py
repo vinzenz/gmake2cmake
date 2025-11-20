@@ -634,13 +634,13 @@ def atomic_write(target_path: Path) -> Generator[Path, None, None]:
         yield temp_path
         # Atomic rename (or copy on Windows)
         temp_path.replace(target_path)
-    except Exception:
-        # Clean up temporary file on error
+    finally:
+        # Clean up temporary file on error; missing_ok avoids issues after successful replace
         try:
             temp_path.unlink(missing_ok=True)
-        except Exception:
-            pass  # Ignore cleanup errors
-        raise
+        except OSError:
+            # Ignore cleanup errors
+            pass
 
 
 @contextmanager
@@ -670,6 +670,6 @@ def temporary_directory() -> Generator[Path, None, None]:
     finally:
         try:
             shutil.rmtree(temp_path, ignore_errors=False)
-        except Exception:
+        except OSError:
             # Attempt cleanup even if it partially fails
             shutil.rmtree(temp_path, ignore_errors=True)

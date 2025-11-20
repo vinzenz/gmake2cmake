@@ -74,7 +74,7 @@ def setup_logging(
             )
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
-        except Exception as exc:  # pragma: no cover - file IO error
+        except (OSError, PermissionError) as exc:  # pragma: no cover - file IO error
             root_logger.error(f"Failed to set up file logging: {exc}")
 
 

@@ -56,8 +56,14 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
         lines = []
         try:
             lines = fs.read_text(path).splitlines()
-        except Exception as exc:  # pragma: no cover - IO error
-            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {path}: {exc}", location=node)
+        except (OSError, UnicodeDecodeError) as exc:  # pragma: no cover - IO error
+            add(
+                diagnostics,
+                "ERROR",
+                "DISCOVERY_READ_FAIL",
+                f"Failed to read {path}: {exc}",
+                location=node,
+            )
         for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()
             # Check for include statements
@@ -104,7 +110,8 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                             f"Subdir Makefile missing at {child_path}",
                             location=f"{path}:{line_no}",
                         )
-                except Exception:
+                except (IndexError, ValueError):
+                    # Ignore malformed -C directives that cannot be parsed
                     pass
         visited_stack.pop()
 
@@ -126,8 +133,14 @@ def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: Di
         visited.add(node)
         try:
             text = fs.read_text(Path(node))
-        except Exception as exc:  # pragma: no cover - IO error
-            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {node}: {exc}", location=node)
+        except (OSError, UnicodeDecodeError) as exc:  # pragma: no cover - IO error
+            add(
+                diagnostics,
+                "ERROR",
+                "DISCOVERY_READ_FAIL",
+                f"Failed to read {node}: {exc}",
+                location=node,
+            )
             return
         contents.append(MakefileContent(path=node, content=text, included_from=parent))
         for child in sorted(graph.edges.get(node, set())):

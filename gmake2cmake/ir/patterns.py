@@ -169,7 +169,7 @@ def _find_pattern_matches(rule: EvaluatedRule, source_dir: Path, diagnostics: Di
                         stem=stem,
                     )
                 )
-    except Exception as e:
+    except (OSError, re.error, ValueError) as e:
         add(
             diagnostics,
             "WARN",

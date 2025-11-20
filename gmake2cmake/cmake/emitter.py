@@ -127,7 +127,7 @@ def emit(
             try:
                 fs.makedirs(global_module_path.parent)
                 fs.write_text(global_module_path, global_content)
-            except Exception as exc:  # pragma: no cover - IO error path
+            except (OSError, PermissionError) as exc:  # pragma: no cover - IO error path
                 add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {global_module_path}: {exc}")
     subdirs: List[str] = []
     for dirpath in sorted(layout, key=lambda p: Path(p).as_posix()):
@@ -157,7 +157,7 @@ def emit(
         try:
             fs.makedirs(root_path.parent)
             fs.write_text(root_path, root_content)
-        except Exception as exc:  # pragma: no cover - IO error path
+        except (OSError, PermissionError) as exc:  # pragma: no cover - IO error path
             add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {root_path}: {exc}")
 
     for dirpath, targets in layout.items():
@@ -184,7 +184,7 @@ def emit(
             try:
                 fs.makedirs(path.parent)
                 fs.write_text(path, content)
-            except Exception as exc:  # pragma: no cover
+            except (OSError, PermissionError) as exc:  # pragma: no cover
                 add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {path}: {exc}")
 
     if options.packaging:
@@ -196,7 +196,7 @@ def emit(
                 try:
                     fs.makedirs(full_path.parent)
                     fs.write_text(full_path, content)
-                except Exception as exc:  # pragma: no cover
+                except (OSError, PermissionError) as exc:  # pragma: no cover
                     add(diagnostics, "ERROR", "EMIT_WRITE_FAIL", f"Failed to write {full_path}: {exc}")
 
     return EmitResult(generated_files=generated, unknown_constructs=unknown_constructs)
@@ -433,7 +433,7 @@ def plan_file_layout(project: Project, output_dir: Path) -> Dict[Path, List[Targ
         if dir_rel.is_absolute():
             try:
                 dir_rel = dir_rel.relative_to(Path(".").resolve())
-            except Exception:
+            except ValueError:
                 dir_rel = Path(dir_rel.name)
         abs_dir = (output_dir / dir_rel).resolve()
         layout.setdefault(abs_dir, []).append(target)
