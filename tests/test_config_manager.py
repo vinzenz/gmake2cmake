@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from gmake2cmake import config
 from gmake2cmake.diagnostics import DiagnosticCollector, has_errors
 from tests.conftest import FakeFS

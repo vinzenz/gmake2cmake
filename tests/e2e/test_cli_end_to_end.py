@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from gmake2cmake import cli
 from tests.conftest import FakeFS
 

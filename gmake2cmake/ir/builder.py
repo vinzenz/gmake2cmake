@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 from gmake2cmake.config import ConfigModel, apply_flag_mapping, classify_library_override
 from gmake2cmake.diagnostics import DiagnosticCollector, add
-from gmake2cmake.make.evaluator import BuildFacts, InferredCompile, EvaluatedRule, ProjectGlobals
+from gmake2cmake.make.evaluator import BuildFacts, EvaluatedRule, InferredCompile, ProjectGlobals
 
 
 @dataclass

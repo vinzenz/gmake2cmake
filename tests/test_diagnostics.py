@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import io
 
-from gmake2cmake.diagnostics import Diagnostic, DiagnosticCollector, add, extend, has_errors, to_console, to_json, exit_code
+from gmake2cmake.diagnostics import (
+    Diagnostic,
+    DiagnosticCollector,
+    add,
+    exit_code,
+    extend,
+    has_errors,
+    to_console,
+    to_json,
+)
 
 
 def test_dedupe_and_ordering_console():

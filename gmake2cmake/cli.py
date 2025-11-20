@@ -7,11 +7,12 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from gmake2cmake import config as config_module
+from gmake2cmake.cmake import emitter as cmake_emitter
 from gmake2cmake.diagnostics import DiagnosticCollector, add, exit_code, to_console, to_json
-from gmake2cmake.make import discovery, parser as make_parser, evaluator
 from gmake2cmake.fs import FileSystemAdapter, LocalFS
 from gmake2cmake.ir import builder as ir_builder
-from gmake2cmake.cmake import emitter as cmake_emitter
+from gmake2cmake.make import discovery, evaluator
+from gmake2cmake.make import parser as make_parser
 
 
 @dataclass

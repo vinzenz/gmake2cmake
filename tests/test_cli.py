@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
-
-import pytest
 
 from gmake2cmake import cli
-from gmake2cmake.diagnostics import add, DiagnosticCollector
+from gmake2cmake.diagnostics import add
 from tests.conftest import FakeFS
 
 
@@ -24,7 +21,6 @@ def test_parse_args_defaults_and_packaging():
 
 def test_run_propagates_errors_and_report(tmp_path, monkeypatch):
     fs = FakeFS()
-    reports = []
 
     def fake_stdout():
         return io.StringIO()
