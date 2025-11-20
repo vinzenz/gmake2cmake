@@ -229,34 +229,49 @@ def run(
     now: Optional[Callable[[], datetime]] = None,
     pipeline_fn: Optional[Callable[[RunContext], None]] = None,
 ) -> int:
+    args, early_diag = _parse_cli_args(argv)
+    if args is None and early_diag is not None:
+        to_console(early_diag, stream=_stdout(), verbose=True)
+        return exit_code(early_diag)
+    diagnostics = DiagnosticCollector()
     fs = fs or LocalFS()
     now = now or datetime.utcnow
-    try:
-        args = parse_args(argv)
-    except ValueError as exc:
-        diagnostics = DiagnosticCollector()
-        handle_exception(exc, diagnostics)
-        to_console(diagnostics, stream=_stdout(), verbose=True)
-        return exit_code(diagnostics)
-
-    # Set up logging early, before loading config
     setup_logging(verbosity=args.verbose, log_file=args.log_file)
-
-    # Set up profiling if requested
     if args.profile:
         enable_profiling()
-
-    diagnostics = DiagnosticCollector()
     config = config_module.load_and_merge(args, diagnostics, fs)
     ctx = RunContext(args=args, config=config, diagnostics=diagnostics, filesystem=fs, now=now)
 
-    # Handle config validation mode
     if args.validate_config:
-        to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose))
-        if exit_code(diagnostics) == 0:
-            _stdout().write("Configuration is valid.\n")
-        return exit_code(diagnostics)
+        return _handle_validate_config(ctx)
 
+    _execute_pipeline(ctx, diagnostics, pipeline_fn)
+    if args.profile:
+        _emit_profile_summary()
+    if args.report:
+        project_name = ctx.config.project_name or ctx.args.source_dir.name or DEFAULT_PROJECT_NAME
+        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs, project_name=project_name)
+    to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose), unknown_count=len(ctx.unknown_constructs))
+    return exit_code(diagnostics)
+
+
+def _parse_cli_args(argv: list[str]) -> CLIArgs:
+    try:
+        return parse_args(argv), None
+    except ValueError as exc:
+        diagnostics = DiagnosticCollector()
+        handle_exception(exc, diagnostics)
+        return None, diagnostics
+
+
+def _handle_validate_config(ctx: RunContext) -> int:
+    to_console(ctx.diagnostics, stream=_stdout(), verbose=bool(ctx.args.verbose))
+    if exit_code(ctx.diagnostics) == 0:
+        _stdout().write("Configuration is valid.\n")
+    return exit_code(ctx.diagnostics)
+
+
+def _execute_pipeline(ctx: RunContext, diagnostics: DiagnosticCollector, pipeline_fn: Optional[Callable[[RunContext], None]]) -> None:
     try:
         if pipeline_fn:
             try:
@@ -268,20 +283,17 @@ def run(
         else:
             _default_pipeline(ctx)
     finally:
-        # Print profiling summary if enabled
-        if args.profile:
-            disable_profiling()
-            metrics = get_metrics()
-            if metrics.stage_timings:
-                to_console(DiagnosticCollector(), stream=_stdout(), verbose=False)  # Empty line
-                logger = logging.getLogger("gmake2cmake.profile")
-                logger.info(metrics.get_summary())
+        if ctx.args.profile:
+            _emit_profile_summary()
 
-    if args.report:
-        project_name = ctx.config.project_name or ctx.args.source_dir.name or DEFAULT_PROJECT_NAME
-        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs, project_name=project_name)
-    to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose), unknown_count=len(ctx.unknown_constructs))
-    return exit_code(diagnostics)
+
+def _emit_profile_summary() -> None:
+    disable_profiling()
+    metrics = get_metrics()
+    if metrics.stage_timings:
+        to_console(DiagnosticCollector(), stream=_stdout(), verbose=False)  # Empty line
+        logger = logging.getLogger("gmake2cmake.profile")
+        logger.info(metrics.get_summary())
 
 
 def _default_pipeline(ctx: RunContext) -> None:
@@ -290,42 +302,65 @@ def _default_pipeline(ctx: RunContext) -> None:
     if exit_code(ctx.diagnostics) != 0:
         return
     for content in contents:
-        log_stage(f"parse:{content.path}", verbosity=ctx.args.verbose)
-        parse_result = make_parser.parse_makefile(content.content, content.path, unknown_factory=ctx.unknown_factory)
-        for diag in parse_result.diagnostics:
-            add(ctx.diagnostics, diag["severity"], diag["code"], diag["message"], diag.get("location"))
-        if parse_result.unknown_constructs:
-            ctx.unknown_constructs.extend(parse_result.unknown_constructs)
-        log_stage(f"evaluate:{content.path}", verbosity=ctx.args.verbose)
-        facts = evaluator.evaluate_ast(
-            parse_result.ast,
-            evaluator.VariableEnv(),
-            ctx.config,
-            ctx.diagnostics,
-            unknown_factory=ctx.unknown_factory,
-        )
-        log_stage(f"build:{content.path}", verbosity=ctx.args.verbose)
-        ir_result = ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
-        if exit_code(ctx.diagnostics) != 0 or ir_result.project is None:
-            continue
-        if ir_result.project.unknown_constructs:
-            ctx.unknown_constructs.extend(ir_result.project.unknown_constructs)
-        log_stage(f"emit:{content.path}", verbosity=ctx.args.verbose)
-        options = cmake_emitter.EmitOptions(
-            dry_run=ctx.args.dry_run,
-            packaging=ctx.config.packaging_enabled,
-            namespace=ctx.config.namespace or (ctx.config.project_name or DEFAULT_PROJECT_NAME),
-        )
-        emit_result = cmake_emitter.emit(
-            ir_result.project,
-            ctx.args.output_dir,
-            options=options,
-            fs=ctx.filesystem,
-            diagnostics=ctx.diagnostics,
-            unknown_factory=ctx.unknown_factory,
-        )
-        if emit_result.unknown_constructs:
-            ctx.unknown_constructs.extend(emit_result.unknown_constructs)
+        _process_file(content, ctx)
+
+
+def _process_file(content, ctx: RunContext) -> None:
+    _parse_file(content, ctx)
+    if exit_code(ctx.diagnostics) != 0:
+        return
+    facts = _evaluate_file(content, ctx)
+    ir_result = _build_ir(facts, ctx)
+    if exit_code(ctx.diagnostics) != 0 or ir_result.project is None:
+        return
+    _emit_targets(content.path, ir_result, ctx)
+
+
+def _parse_file(content, ctx: RunContext) -> None:
+    log_stage(f"parse:{content.path}", verbosity=ctx.args.verbose)
+    parse_result = make_parser.parse_makefile(content.content, content.path, unknown_factory=ctx.unknown_factory)
+    for diag in parse_result.diagnostics:
+        add(ctx.diagnostics, diag["severity"], diag["code"], diag["message"], diag.get("location"))
+    if parse_result.unknown_constructs:
+        ctx.unknown_constructs.extend(parse_result.unknown_constructs)
+    content.parse_result = parse_result
+
+
+def _evaluate_file(content, ctx: RunContext):
+    log_stage(f"evaluate:{content.path}", verbosity=ctx.args.verbose)
+    return evaluator.evaluate_ast(
+        content.parse_result.ast,
+        evaluator.VariableEnv(),
+        ctx.config,
+        ctx.diagnostics,
+        unknown_factory=ctx.unknown_factory,
+    )
+
+
+def _build_ir(facts, ctx: RunContext):
+    log_stage("build", verbosity=ctx.args.verbose)
+    return ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
+
+
+def _emit_targets(path: str, ir_result, ctx: RunContext) -> None:
+    if ir_result.project.unknown_constructs:
+        ctx.unknown_constructs.extend(ir_result.project.unknown_constructs)
+    log_stage(f"emit:{path}", verbosity=ctx.args.verbose)
+    options = cmake_emitter.EmitOptions(
+        dry_run=ctx.args.dry_run,
+        packaging=ctx.config.packaging_enabled,
+        namespace=ctx.config.namespace or (ctx.config.project_name or DEFAULT_PROJECT_NAME),
+    )
+    emit_result = cmake_emitter.emit(
+        ir_result.project,
+        ctx.args.output_dir,
+        options=options,
+        fs=ctx.filesystem,
+        diagnostics=ctx.diagnostics,
+        unknown_factory=ctx.unknown_factory,
+    )
+    if emit_result.unknown_constructs:
+        ctx.unknown_constructs.extend(emit_result.unknown_constructs)
 
 
 def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:

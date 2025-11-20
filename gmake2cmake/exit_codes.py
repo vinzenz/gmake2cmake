@@ -95,26 +95,8 @@ def get_exit_code(collector: DiagnosticCollector) -> int:
     if not error_codes:
         return ExitCode.SUCCESS
 
-    # Find the highest priority exit code
-    categories = {
-        _CODE_TO_CATEGORY.get(code, ExitCode.USAGE)
-        for code in error_codes
-    }
-
-    # If multiple categories, prioritize by severity:
-    # CONFIG (2) > IO (5) > BUILD (4) > PARSE (3) > USAGE (1)
-    if ExitCode.CONFIG in categories:
-        return ExitCode.CONFIG
-    if ExitCode.IO in categories:
-        return ExitCode.IO
-    if ExitCode.BUILD in categories:
-        return ExitCode.BUILD
-    if ExitCode.PARSE in categories:
-        return ExitCode.PARSE
-    if ExitCode.USAGE in categories:
-        return ExitCode.USAGE
-
-    return ExitCode.USAGE
+    categories = {_CODE_TO_CATEGORY.get(code, ExitCode.USAGE) for code in error_codes}
+    return _prioritized_category(categories)
 
 
 def get_exit_code_with_unknown_threshold(
@@ -137,12 +119,16 @@ def get_exit_code_with_unknown_threshold(
     """
     code = get_exit_code(collector)
 
-    # If we have an error already, return that
     if code != ExitCode.SUCCESS:
         return code
-
-    # Check unknown construct threshold
     if threshold > 0 and unknown_count > threshold:
         return ExitCode.PARSE
-
     return ExitCode.SUCCESS
+
+
+def _prioritized_category(categories: set[ExitCode]) -> ExitCode:
+    priority = [ExitCode.CONFIG, ExitCode.IO, ExitCode.BUILD, ExitCode.PARSE, ExitCode.USAGE]
+    for code in priority:
+        if code in categories:
+            return code
+    return ExitCode.USAGE

@@ -183,34 +183,39 @@ class MarkdownReporter:
     ) -> str:
         """Generate actionable recommendations."""
         recommendations = []
-
-        # Check for errors
-        errors = [d for d in diagnostics_collector.diagnostics if d.severity == "ERROR"]
-        if errors:
-            recommendations.append("- **Address all errors** before proceeding with conversion")
-            recommendations.append(f"  - {len(errors)} error(s) found that must be resolved")
-
-        # Check for unknown constructs
-        if unknown_constructs:
-            recommendations.append(
-                "- **Review unknown constructs** for manual conversion requirements"
-            )
-            manual_review = [uc for uc in unknown_constructs if uc.suggested_action == "manual_review"]
-            if manual_review:
-                recommendations.append(f"  - {len(manual_review)} construct(s) require manual review")
-
-        # Check for warnings
-        warnings = [d for d in diagnostics_collector.diagnostics if d.severity == "WARN"]
-        if warnings:
-            recommendations.append("- **Investigate warnings** for potential issues")
-            recommendations.append(f"  - {len(warnings)} warning(s) found")
-
+        recommendations.extend(self._recommend_error_actions(diagnostics_collector))
+        recommendations.extend(self._recommend_unknown_actions(unknown_constructs))
+        recommendations.extend(self._recommend_warning_actions(diagnostics_collector))
         if not recommendations:
             return "## Recommendations\n\nNo issues found - conversion appears to be complete."
+        return "## Recommendations\n\n" + "\n".join(recommendations)
 
-        section = "## Recommendations\n\n"
-        section += "\n".join(recommendations)
-        return section
+    def _recommend_error_actions(self, diagnostics_collector: DiagnosticCollector) -> List[str]:
+        errors = [d for d in diagnostics_collector.diagnostics if d.severity == "ERROR"]
+        if not errors:
+            return []
+        return [
+            "- **Address all errors** before proceeding with conversion",
+            f"  - {len(errors)} error(s) found that must be resolved",
+        ]
+
+    def _recommend_unknown_actions(self, unknown_constructs: List[UnknownConstruct]) -> List[str]:
+        if not unknown_constructs:
+            return []
+        recommendations = ["- **Review unknown constructs** for manual conversion requirements"]
+        manual_review = [uc for uc in unknown_constructs if uc.suggested_action == "manual_review"]
+        if manual_review:
+            recommendations.append(f"  - {len(manual_review)} construct(s) require manual review")
+        return recommendations
+
+    def _recommend_warning_actions(self, diagnostics_collector: DiagnosticCollector) -> List[str]:
+        warnings = [d for d in diagnostics_collector.diagnostics if d.severity == "WARN"]
+        if not warnings:
+            return []
+        return [
+            "- **Investigate warnings** for potential issues",
+            f"  - {len(warnings)} warning(s) found",
+        ]
 
     def _calculate_metrics(
         self,
