@@ -47,12 +47,12 @@ class EvaluationCache:
 
     def __init__(self, config: CacheConfig) -> None:
         """Initialize cache with given configuration."""
-        self.config = config
-        self.stats = CacheStats()
+        self.config: CacheConfig = config
+        self.stats: CacheStats = CacheStats()
         self._variable_cache: Dict[str, str] = {}
         self._compile_cache: Dict[str, InferredCompile] = {}
         self._access_order: Dict[str, int] = {}
-        self._next_access_id = 0
+        self._next_access_id: int = 0
 
     def get_variable_expansion(
         self, variable_name: str, env_hash: str, callback: Callable[[str, str], str]

@@ -1,4 +1,16 @@
-"""Path validation and normalization utilities."""
+"""Path validation and normalization utilities.
+
+Provides secure path handling with validation against directory traversal
+and other path-based attacks. All paths are normalized to POSIX format
+with forward slashes.
+
+Example:
+    >>> validate_path("./src/Makefile")
+    'src/Makefile'
+    >>> validate_path("../escape.txt")  # Raises ValueError
+    >>> paths = validate_paths(["a.mk", "b.mk", "a.mk"])  # Deduplicates
+    ['a.mk', 'b.mk']
+"""
 
 from __future__ import annotations
 
