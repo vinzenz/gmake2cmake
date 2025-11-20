@@ -226,14 +226,29 @@ class ParallelEvaluator:
         try:
             with mp.Pool(processes=self.num_processes) as pool:
                 results = pool.map(worker_evaluate, work_items, chunksize=1)
-        except Exception:
+        except (OSError, RuntimeError, mp.ProcessError) as e:
             # Graceful degradation: fall back to serial processing on error
+            # OSError: System errors during pool creation
+            # RuntimeError: Pool context manager issues
+            # ProcessError: Worker process failures
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Parallel processing failed, falling back to serial: %s",
+                e,
+                exc_info=True
+            )
             results = []
             for item in work_items:
                 try:
                     results.append(worker_evaluate(item))
-                except Exception:
-                    # Continue processing other items
+                except (OSError, RuntimeError) as worker_error:
+                    # Continue processing other items but log the error
+                    logger.error(
+                        "Worker failed on item, using empty BuildFacts: %s",
+                        worker_error,
+                        exc_info=True
+                    )
                     results.append(BuildFacts())
 
         return merge_build_facts(results)
