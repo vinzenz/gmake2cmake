@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from gmake2cmake.constants import VALID_CONFIG_TARGET_TYPES, VALID_LINK_CLASSIFICATIONS
 from gmake2cmake.diagnostics import DiagnosticCollector, add
@@ -90,16 +90,88 @@ def validate_config_schema(config_data: Dict[str, Any], diagnostics: DiagnosticC
         return False
 
 
+def _warn_unknown_keys(config_data: Dict[str, Any], valid_keys: set[str], diagnostics: DiagnosticCollector) -> None:
+    for key in config_data.keys():
+        if key not in valid_keys:
+            add(diagnostics, "WARN", "CONFIG_UNKNOWN_KEY", f"Unknown config key: {key}")
+
+
+def _validate_strings(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
+    project_name = config_data.get("project_name")
+    if "project_name" in config_data and not isinstance(project_name, (str, type(None))):
+        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "project_name must be a string")
+        return False
+
+    languages = config_data.get("languages")
+    if languages is not None:
+        if not isinstance(languages, list):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "languages must be a list")
+            return False
+        for lang in languages:
+            if lang not in {"C", "CXX", "ASM", "RC"}:
+                add(diagnostics, "WARN", "CONFIG_SCHEMA_VALIDATION", f"Unknown language: {lang}")
+    return True
+
+
+def _validate_collections(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
+    for dict_key in ["target_mappings", "flag_mappings", "custom_rules", "link_overrides"]:
+        if dict_key in config_data and not isinstance(config_data[dict_key], dict):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{dict_key} must be a dictionary")
+            return False
+
+    for list_key in ["ignore_paths", "global_config_files"]:
+        if list_key in config_data and not isinstance(config_data[list_key], list):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{list_key} must be a list")
+            return False
+    return True
+
+
+def _validate_booleans(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
+    for bool_key in ["packaging_enabled", "strict", "error_recovery_enabled"]:
+        if bool_key in config_data and not isinstance(config_data[bool_key], bool):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{bool_key} must be a boolean")
+            return False
+    return True
+
+
+def _validate_target_mappings(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
+    target_mappings = config_data.get("target_mappings")
+    if target_mappings is None or not isinstance(target_mappings, dict):
+        return True
+    allowed_types = {t for t in VALID_CONFIG_TARGET_TYPES if t is not None}
+    for _, mapping in target_mappings.items():
+        if not isinstance(mapping, dict):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "target_mappings entries must be dictionaries")
+            return False
+        type_override = mapping.get("type_override")
+        if type_override is not None and type_override not in allowed_types:
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"Invalid type_override: {type_override}")
+            return False
+    return True
+
+
+def _validate_link_overrides(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
+    link_overrides = config_data.get("link_overrides")
+    if link_overrides is None or not isinstance(link_overrides, dict):
+        return True
+    for _, override in link_overrides.items():
+        if not isinstance(override, dict):
+            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "link_overrides entries must be dictionaries")
+            return False
+        classification = override.get("classification")
+        if classification is not None and classification not in VALID_LINK_CLASSIFICATIONS:
+            add(
+                diagnostics,
+                "ERROR",
+                "CONFIG_SCHEMA_VALIDATION",
+                f"Invalid classification value: {classification}",
+            )
+            return False
+    return True
+
+
 def _basic_config_validation(config_data: Dict[str, Any], diagnostics: DiagnosticCollector) -> bool:
-    """Basic configuration validation without jsonschema.
-
-    Args:
-        config_data: Configuration dictionary to validate.
-        diagnostics: Collector for validation errors.
-
-    Returns:
-        True if basic validation passes, False otherwise.
-    """
+    """Basic configuration validation without jsonschema."""
     valid_keys = {
         "project_name",
         "version",
@@ -116,77 +188,18 @@ def _basic_config_validation(config_data: Dict[str, Any], diagnostics: Diagnosti
         "error_recovery_enabled",
     }
 
-    # Check for unknown keys
-    for key in config_data.keys():
-        if key not in valid_keys:
-            add(diagnostics, "WARN", "CONFIG_UNKNOWN_KEY", f"Unknown config key: {key}")
+    _warn_unknown_keys(config_data, valid_keys, diagnostics)
 
-    # Validate project_name type
-    if "project_name" in config_data and not isinstance(config_data["project_name"], (str, type(None))):
-        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "project_name must be a string")
-        return False
-
-    # Validate languages type
-    if "languages" in config_data:
-        langs = config_data["languages"]
-        if not isinstance(langs, list):
-            add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "languages must be a list")
+    validators: list[Callable[[Dict[str, Any], DiagnosticCollector], bool]] = [
+        _validate_strings,
+        _validate_collections,
+        _validate_booleans,
+        _validate_target_mappings,
+        _validate_link_overrides,
+    ]
+    for validate_fn in validators:
+        if not validate_fn(config_data, diagnostics):
             return False
-        for lang in langs:
-            if lang not in {"C", "CXX", "ASM", "RC"}:
-                add(diagnostics, "WARN", "CONFIG_SCHEMA_VALIDATION", f"Unknown language: {lang}")
-
-    # Validate dictionaries
-    for dict_key in ["target_mappings", "flag_mappings", "custom_rules", "link_overrides"]:
-        if dict_key in config_data:
-            value = config_data[dict_key]
-            if not isinstance(value, dict):
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{dict_key} must be a dictionary")
-                return False
-
-    # Validate lists
-    for list_key in ["ignore_paths", "global_config_files"]:
-        if list_key in config_data:
-            value = config_data[list_key]
-            if not isinstance(value, list):
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{list_key} must be a list")
-                return False
-
-    # Validate booleans
-    for bool_key in ["packaging_enabled", "strict", "error_recovery_enabled"]:
-        if bool_key in config_data:
-            value = config_data[bool_key]
-            if not isinstance(value, bool):
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"{bool_key} must be a boolean")
-                return False
-
-    # Validate nested fields where possible (best-effort without jsonschema)
-    if "target_mappings" in config_data and isinstance(config_data["target_mappings"], dict):
-        allowed_types = {t for t in VALID_CONFIG_TARGET_TYPES if t is not None}
-        for _, mapping in config_data["target_mappings"].items():
-            if not isinstance(mapping, dict):
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "target_mappings entries must be dictionaries")
-                return False
-            type_override = mapping.get("type_override")
-            if type_override is not None and type_override not in allowed_types:
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"Invalid type_override: {type_override}")
-                return False
-
-    if "link_overrides" in config_data and isinstance(config_data["link_overrides"], dict):
-        for _, override in config_data["link_overrides"].items():
-            if not isinstance(override, dict):
-                add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", "link_overrides entries must be dictionaries")
-                return False
-            classification = override.get("classification")
-            if classification is not None and classification not in VALID_LINK_CLASSIFICATIONS:
-                add(
-                    diagnostics,
-                    "ERROR",
-                    "CONFIG_SCHEMA_VALIDATION",
-                    f"Invalid classification value: {classification}",
-                )
-                return False
-
     return True
 
 

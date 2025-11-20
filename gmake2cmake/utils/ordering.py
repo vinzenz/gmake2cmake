@@ -36,39 +36,48 @@ def topological_sort(graph: dict[str, Set[str]], nodes: Optional[Set[str]] = Non
     Raises:
         ValueError: If a cycle is detected in the graph.
     """
-    if nodes is None:
-        nodes = set(graph.keys())
-        for deps in graph.values():
-            nodes.update(deps)
+    nodes = _collect_nodes(graph, nodes)
+    in_degree, adj_list = _build_dependency_maps(graph, nodes)
+    return _kahn_topological_sort(nodes, in_degree, adj_list)
 
-    # Create a copy of the graph to avoid modifying the original
+
+def _collect_nodes(graph: dict[str, Set[str]], provided: Optional[Set[str]]) -> Set[str]:
+    if provided is not None:
+        return set(provided)
+    collected = set(graph.keys())
+    for deps in graph.values():
+        collected.update(deps)
+    return collected
+
+
+def _build_dependency_maps(
+    graph: dict[str, Set[str]], nodes: Set[str]
+) -> tuple[dict[str, int], dict[str, Set[str]]]:
     in_degree = {node: 0 for node in nodes}
     adj_list: dict[str, Set[str]] = {node: set() for node in nodes}
-
     for node, deps in graph.items():
         for dep in deps:
             if dep in nodes:
                 adj_list[dep].add(node)
                 in_degree[node] += 1
+    return in_degree, adj_list
 
-    # Kahn's algorithm with stable ordering
+
+def _kahn_topological_sort(
+    nodes: Set[str], in_degree: dict[str, int], adj_list: dict[str, Set[str]]
+) -> List[str]:
     queue = sorted([node for node in nodes if in_degree[node] == 0])
-    result = []
-
+    result: List[str] = []
     while queue:
-        # Always process in sorted order for deterministic output
         queue.sort()
         node = queue.pop(0)
         result.append(node)
-
         for neighbor in sorted(adj_list[node]):
             in_degree[neighbor] -= 1
             if in_degree[neighbor] == 0:
                 queue.append(neighbor)
-
     if len(result) != len(nodes):
         raise ValueError("Cycle detected in dependency graph")
-
     return result
 
 

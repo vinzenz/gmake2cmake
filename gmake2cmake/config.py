@@ -174,30 +174,15 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
         "strict",
         "error_recovery_enabled",
     }
-    for key in list(raw.keys()):
-        if key not in allowed_keys:
-            severity = "ERROR" if strict else "WARN"
-            add(diagnostics, severity, "CONFIG_UNKNOWN_KEY", f"Unknown config key: {key}")
+    _report_unknown_keys(raw, allowed_keys, strict, diagnostics)
 
-    # Validate and extract project_name with type checking
-    project_name = raw.get("project_name")
-    if project_name is not None and not isinstance(project_name, str):
-        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"project_name must be a string, got {type(project_name).__name__}")
-        project_name = None
+    project_name = _extract_string_field(raw, "project_name", diagnostics)
     model.project_name = project_name
 
-    # Validate and extract version with type checking
-    version = raw.get("version")
-    if version is not None and not isinstance(version, str):
-        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"version must be a string, got {type(version).__name__}")
-        version = None
+    version = _extract_string_field(raw, "version", diagnostics)
     model.version = version
 
-    # Extract namespace, ensuring it's a string before sanitizing
-    namespace = raw.get("namespace")
-    if namespace is not None and not isinstance(namespace, str):
-        add(diagnostics, "ERROR", "CONFIG_SCHEMA_VALIDATION", f"namespace must be a string, got {type(namespace).__name__}")
-        namespace = None
+    namespace = _extract_string_field(raw, "namespace", diagnostics)
     if not namespace:
         namespace = project_name if isinstance(project_name, str) else None
     model.namespace = _sanitize_namespace(namespace)
@@ -211,7 +196,6 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
     model.packaging_enabled = bool(raw.get("packaging_enabled", False))
     model.strict = bool(raw.get("strict", strict))
     model.error_recovery_enabled = bool(raw.get("error_recovery_enabled", True))
-    # Disable recovery if strict mode is enabled
     if model.strict:
         model.error_recovery_enabled = False
     return model
@@ -299,6 +283,26 @@ def _parse_link_overrides(raw: Dict, diagnostics: DiagnosticCollector, strict: b
             imported_target=spec.get("imported_target"),
         )
     return parsed
+
+
+def _extract_string_field(raw: Dict, field: str, diagnostics: DiagnosticCollector) -> Optional[str]:
+    value = raw.get(field)
+    if value is not None and not isinstance(value, str):
+        add(
+            diagnostics,
+            "ERROR",
+            "CONFIG_SCHEMA_VALIDATION",
+            f"{field} must be a string, got {type(value).__name__}",
+        )
+        return None
+    return value
+
+
+def _report_unknown_keys(raw: Dict, allowed_keys: set[str], strict: bool, diagnostics: DiagnosticCollector) -> None:
+    for key in list(raw.keys()):
+        if key not in allowed_keys:
+            severity = "ERROR" if strict else "WARN"
+            add(diagnostics, severity, "CONFIG_UNKNOWN_KEY", f"Unknown config key: {key}")
 
 
 def load_and_merge(args, diagnostics: DiagnosticCollector, fs: FileSystemAdapter) -> ConfigModel:

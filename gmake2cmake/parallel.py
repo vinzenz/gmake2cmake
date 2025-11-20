@@ -80,47 +80,39 @@ def partition_work(graph: IncludeGraph) -> WorkPartition:
 
 
 def merge_build_facts(fact_list: List[BuildFacts]) -> BuildFacts:
-    """Merge multiple BuildFacts from parallel workers.
-
-    Deterministically combines:
-    - All rules (sorted by location for stability)
-    - All inferred compiles (sorted for stability)
-    - All custom commands (sorted by location)
-    - Project globals (merged with validation)
-    - Diagnostics (preserved in order)
-    - Unknown constructs (dedup by name)
-
-    Args:
-        fact_list: Results from parallel workers
-
-    Returns:
-        Merged BuildFacts
-    """
+    """Merge multiple BuildFacts from parallel workers."""
     merged = BuildFacts()
+    merged.rules = _merge_rules(fact_list)
+    merged.inferred_compiles = _merge_inferred_compiles(fact_list)
+    merged.custom_commands = _merge_custom_commands(fact_list)
+    _merge_project_globals(fact_list, merged)
+    _merge_diagnostics(fact_list, merged)
+    merged.unknown_constructs = _merge_unknowns(fact_list)
+    return merged
 
-    # Merge rules deterministically
+
+def _merge_rules(fact_list: List[BuildFacts]) -> List[EvaluatedRule]:
     all_rules: List[EvaluatedRule] = []
     for facts in fact_list:
         all_rules.extend(facts.rules)
-    # Sort by location for deterministic ordering
-    all_rules.sort(key=lambda r: (r.location.path, r.location.line, r.location.column))
-    merged.rules = all_rules
+    return sorted(all_rules, key=lambda r: (r.location.path, r.location.line, r.location.column))
 
-    # Merge inferred compiles deterministically
+
+def _merge_inferred_compiles(fact_list: List[BuildFacts]) -> List[InferredCompile]:
     all_compiles: List[InferredCompile] = []
     for facts in fact_list:
         all_compiles.extend(facts.inferred_compiles)
-    all_compiles.sort(key=lambda c: (c.location.path, c.location.line, c.source))
-    merged.inferred_compiles = all_compiles
+    return sorted(all_compiles, key=lambda c: (c.location.path, c.location.line, c.source))
 
-    # Merge custom commands deterministically
+
+def _merge_custom_commands(fact_list: List[BuildFacts]) -> List[EvaluatedRule]:
     all_custom: List[EvaluatedRule] = []
     for facts in fact_list:
         all_custom.extend(facts.custom_commands)
-    all_custom.sort(key=lambda r: (r.location.path, r.location.line, r.location.column))
-    merged.custom_commands = all_custom
+    return sorted(all_custom, key=lambda r: (r.location.path, r.location.line, r.location.column))
 
-    # Merge project globals
+
+def _merge_project_globals(fact_list: List[BuildFacts], merged: BuildFacts) -> None:
     for facts in fact_list:
         for key, value in facts.project_globals.vars.items():
             merged.project_globals.vars[key] = value
@@ -134,19 +126,21 @@ def merge_build_facts(fact_list: List[BuildFacts]) -> BuildFacts:
             merged.project_globals.feature_toggles[key] = value
         merged.project_globals.sources.extend(facts.project_globals.sources)
 
-    # Merge diagnostics preserving order
+
+def _merge_diagnostics(fact_list: List[BuildFacts], merged: BuildFacts) -> None:
     for facts in fact_list:
         merged.diagnostics.extend(facts.diagnostics)
 
-    # Merge unknown constructs with dedup by ID
+
+def _merge_unknowns(fact_list: List[BuildFacts]) -> List:
+    merged_unknowns: List = []
     seen_unknowns: Set[str] = set()
     for facts in fact_list:
         for unknown in facts.unknown_constructs:
             if unknown.id not in seen_unknowns:
-                merged.unknown_constructs.append(unknown)
+                merged_unknowns.append(unknown)
                 seen_unknowns.add(unknown.id)
-
-    return merged
+    return merged_unknowns
 
 
 def worker_evaluate(work_item: Tuple[Set[str], Dict[str, str]]) -> BuildFacts:
