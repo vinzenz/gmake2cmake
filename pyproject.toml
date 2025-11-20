@@ -12,6 +12,10 @@ gmake2cmake = "gmake2cmake.cli:main"
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.3.0"]
 
+[tool.setuptools.packages.find]
+include = ["gmake2cmake*"]
+exclude = ["components*", "tasks*", "tests*", "docs*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
