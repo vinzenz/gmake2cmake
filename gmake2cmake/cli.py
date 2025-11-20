@@ -26,6 +26,7 @@ from gmake2cmake.ir.unknowns import to_dict as unknown_to_dict
 from gmake2cmake.logging_config import log_stage, setup_logging
 from gmake2cmake.make import discovery, evaluator
 from gmake2cmake.make import parser as make_parser
+from gmake2cmake.markdown_reporter import MarkdownReporter
 from gmake2cmake.profiling import disable_profiling, enable_profiling, get_metrics
 
 
@@ -277,7 +278,8 @@ def run(
                 logger.info(metrics.get_summary())
 
     if args.report:
-        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs)
+        project_name = ctx.config.project_name or ctx.args.source_dir.name or DEFAULT_PROJECT_NAME
+        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs, project_name=project_name)
     to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose), unknown_count=len(ctx.unknown_constructs))
     return exit_code(diagnostics)
 
@@ -340,13 +342,21 @@ def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:
     ]
 
 
-def _write_report(output_dir: Path, diagnostics: DiagnosticCollector, fs: FileSystemAdapter, unknowns: list[UnknownConstruct]) -> None:
+def _write_report(
+    output_dir: Path,
+    diagnostics: DiagnosticCollector,
+    fs: FileSystemAdapter,
+    unknowns: list[UnknownConstruct],
+    *,
+    project_name: str,
+) -> None:
     report_path = output_dir / REPORT_JSON_FILENAME
     markdown_path = output_dir / REPORT_MD_FILENAME
     diag_payload = _serialize_diagnostics(diagnostics)
     unknown_payload = [unknown_to_dict(u) for u in unknowns]
     json_report = {"diagnostics": diag_payload, "unknown_constructs": unknown_payload}
-    markdown = _render_unknowns_markdown(unknowns)
+    reporter = MarkdownReporter(project_name)
+    markdown = reporter.generate_report(diagnostics, unknowns)
     try:
         fs.makedirs(report_path.parent)
         fs.write_text(report_path, json.dumps(json_report, sort_keys=True))
@@ -355,23 +365,6 @@ def _write_report(output_dir: Path, diagnostics: DiagnosticCollector, fs: FileSy
         add(diagnostics, "ERROR", "REPORT_WRITE_FAIL", f"Failed to write report: {exc}")
     except (TypeError, ValueError) as exc:  # pragma: no cover - serialization error path
         add(diagnostics, "ERROR", "REPORT_SERIALIZE_FAIL", f"Failed to serialize report: {exc}")
-
-
-def _render_unknowns_markdown(unknowns: list[UnknownConstruct]) -> str:
-    lines = ["### Unknown Constructs"]
-    if not unknowns:
-        lines.append("None")
-    for uc in unknowns:
-        location = uc.file
-        if uc.line is not None:
-            location += f":{uc.line}"
-            if uc.column is not None:
-                location += f":{uc.column}"
-        targets = ",".join(uc.context.get("targets", []))
-        lines.append(
-            f"- {uc.id} [{uc.category}] {location} | raw: {uc.raw_snippet} | normalized: {uc.normalized_form} | affects: {targets or 'n/a'} | cmake: {uc.cmake_status} | action: {uc.suggested_action}"
-        )
-    return "\n".join(lines) + "\n"
 
 
 def _stdout() -> TextIO:
