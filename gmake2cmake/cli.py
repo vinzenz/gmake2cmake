@@ -330,13 +330,18 @@ def _default_pipeline(ctx: RunContext) -> None:
 
 def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:
     """Serialize diagnostics to JSON-compatible format."""
+    def _normalize_location(loc: Optional[str]) -> str:
+        if not loc:
+            return ""
+        return str(loc)
+
     return [
         {
             "severity": d.severity,
             "code": d.code,
             "message": d.message,
-            "location": d.location,
-            "origin": d.origin,
+            "location": _normalize_location(d.location),
+            "origin": d.origin or "",
         }
         for d in diagnostics.diagnostics
     ]

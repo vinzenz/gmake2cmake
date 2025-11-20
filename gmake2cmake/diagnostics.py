@@ -156,8 +156,8 @@ def to_json(collector: DiagnosticCollector) -> str:
             "severity": d.severity,
             "code": d.code,
             "message": d.message,
-            "location": d.location,
-            "origin": d.origin,
+            "location": d.location or "",
+            "origin": d.origin or "",
         }
         for d in collector.diagnostics
     ]

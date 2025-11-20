@@ -43,7 +43,13 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
         if node in visited_stack:
             cycle_index = visited_stack.index(node)
             graph.cycles.append(visited_stack[cycle_index:] + [node])
-            add(diagnostics, "ERROR", "DISCOVERY_CYCLE", f"Include cycle detected: {' -> '.join(graph.cycles[-1])}")
+            add(
+                diagnostics,
+                "ERROR",
+                "DISCOVERY_CYCLE",
+                f"Include cycle detected: {' -> '.join(graph.cycles[-1])}",
+                location=node,
+            )
             return
         visited_stack.append(node)
         graph.nodes.add(node)
@@ -51,8 +57,8 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
         try:
             lines = fs.read_text(path).splitlines()
         except Exception as exc:  # pragma: no cover - IO error
-            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {path}: {exc}")
-        for line in lines:
+            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {path}: {exc}", location=node)
+        for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()
             # Check for include statements
             if stripped.startswith("include") or stripped.startswith("-include"):
@@ -64,9 +70,21 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                     if fs.exists(child):
                         dfs(child)
                     elif not optional:
-                        add(diagnostics, "ERROR", "DISCOVERY_INCLUDE_MISSING", f"Missing include {child} from {path}")
+                        add(
+                            diagnostics,
+                            "ERROR",
+                            "DISCOVERY_INCLUDE_MISSING",
+                            f"Missing include {child} from {path}",
+                            location=f"{path}:{line_no}",
+                        )
                     else:
-                        add(diagnostics, "WARN", "DISCOVERY_INCLUDE_OPTIONAL_MISSING", f"Optional include missing {child}")
+                        add(
+                            diagnostics,
+                            "WARN",
+                            "DISCOVERY_INCLUDE_OPTIONAL_MISSING",
+                            f"Optional include missing {child}",
+                            location=f"{path}:{line_no}",
+                        )
             # Check for recursive make patterns $(MAKE) -C subdir
             if "$(MAKE)" in stripped and " -C " in stripped:
                 # Extract directory after -C flag
@@ -79,7 +97,13 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                     if fs.exists(child_path):
                         dfs(child_path)
                     else:
-                        add(diagnostics, "WARN", "DISCOVERY_SUBDIR_MISSING", f"Subdir Makefile missing at {child_path}")
+                        add(
+                            diagnostics,
+                            "WARN",
+                            "DISCOVERY_SUBDIR_MISSING",
+                            f"Subdir Makefile missing at {child_path}",
+                            location=f"{path}:{line_no}",
+                        )
                 except Exception:
                     pass
         visited_stack.pop()
@@ -103,7 +127,7 @@ def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: Di
         try:
             text = fs.read_text(Path(node))
         except Exception as exc:  # pragma: no cover - IO error
-            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {node}: {exc}")
+            add(diagnostics, "ERROR", "DISCOVERY_READ_FAIL", f"Failed to read {node}: {exc}", location=node)
             return
         contents.append(MakefileContent(path=node, content=text, included_from=parent))
         for child in sorted(graph.edges.get(node, set())):
