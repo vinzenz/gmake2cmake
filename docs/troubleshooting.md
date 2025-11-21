@@ -193,7 +193,7 @@ Error: Failed to parse Makefile at line 42: unexpected token
 
 2. Enable debug logging:
    ```bash
-   gmake2cmake --log-level debug
+   GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv
    ```
 
 3. Common problematic constructs:
@@ -571,7 +571,7 @@ Hundreds of warnings making output unreadable.
 ### "Debug output not showing"
 
 **Symptoms:**
-`--log-level debug` doesn't show debug messages.
+`-vvv` or `GMAKE2CMAKE_LOG_LEVEL=DEBUG` doesn't emit debug messages.
 
 **Cause:** Logging configuration issue.
 
@@ -579,12 +579,12 @@ Hundreds of warnings making output unreadable.
 
 1. Verify log level:
    ```bash
-   gmake2cmake --log-level debug 2>&1 | head
+   GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv 2>&1 | head
    ```
 
 2. Check for log file redirection:
    ```bash
-   gmake2cmake --log-level debug --log-file debug.log
+   GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv --log-file debug.log
    cat debug.log
    ```
 
@@ -683,7 +683,7 @@ When reporting issues, include:
 
 4. **Debug output:**
    ```bash
-   gmake2cmake --log-level debug > debug.log 2>&1
+   GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv --log-file debug.log
    ```
 
 5. **Diagnostic report:**

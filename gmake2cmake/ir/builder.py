@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from gmake2cmake.config import (
     ConfigModel,
+    TargetMapping,
     apply_flag_mapping,
     classify_library_override,
     should_ignore_path,
@@ -278,8 +279,6 @@ def _apply_override(
 def _normalize_alias_for_external(classification: str, alias_name: Optional[str], override) -> Optional[str]:
     if classification == "external":
         return override.alias if override and override.alias else None
-    if classification != "internal":
-        return None
     return alias_name
 
 

@@ -23,7 +23,7 @@ from gmake2cmake.fs import FileSystemAdapter, LocalFS
 from gmake2cmake.ir import builder as ir_builder
 from gmake2cmake.ir.unknowns import UnknownConstruct, UnknownConstructFactory
 from gmake2cmake.ir.unknowns import to_dict as unknown_to_dict
-from gmake2cmake.logging_config import log_stage, setup_logging
+from gmake2cmake.logging_config import log_timed_block, setup_logging
 from gmake2cmake.make import discovery, evaluator
 from gmake2cmake.make import parser as make_parser
 from gmake2cmake.markdown_reporter import MarkdownReporter
@@ -46,6 +46,11 @@ class CLIArgs:
         processes: Optional number of processes for parallel operations
         with_packaging: If True, generate install/export/package files
         log_file: Optional path to write structured logs
+        log_max_bytes: Max bytes before rotating log file
+        log_backup_count: Number of rotated log files to keep
+        log_rotate_when: Optional timed rotation unit (e.g., midnight, H)
+        log_rotate_interval: Interval multiplier for timed rotation
+        syslog_address: Optional syslog destination (path or host:port)
         validate_config: If True, validate config and exit without conversion
     """
 
@@ -60,6 +65,11 @@ class CLIArgs:
     processes: Optional[int]
     with_packaging: bool
     log_file: Optional[Path] = None
+    log_max_bytes: int = 0
+    log_backup_count: int = 3
+    log_rotate_when: Optional[str] = None
+    log_rotate_interval: int = 1
+    syslog_address: Optional[str] = None
     profile: bool = False
     validate_config: bool = False
 
@@ -70,12 +80,13 @@ class RunContext:
 
     Attributes:
         args: Parsed command-line arguments
-        config: Configuration model loaded from YAML
-        diagnostics: Collector for diagnostic messages and errors
-        filesystem: File system adapter (for testing/modularity)
-        now: Callable that returns current datetime
-        unknown_constructs: List of constructs that could not be handled
-        unknown_factory: Factory for creating UnknownConstruct instances
+    config: Configuration model loaded from YAML
+    diagnostics: Collector for diagnostic messages and errors
+    filesystem: File system adapter (for testing/modularity)
+    now: Callable that returns current datetime
+    unknown_constructs: List of constructs that could not be handled
+    unknown_factory: Factory for creating UnknownConstruct instances
+    correlation_id: Correlation ID used for tracing logs
     """
 
     args: CLIArgs
@@ -85,6 +96,7 @@ class RunContext:
     now: Callable[[], datetime]
     unknown_constructs: list[UnknownConstruct] = field(default_factory=list)
     unknown_factory: UnknownConstructFactory = field(default_factory=UnknownConstructFactory)
+    correlation_id: str = ""
 
 
 def parse_args(argv: list[str]) -> CLIArgs:
@@ -173,6 +185,37 @@ Examples:
         help="Write structured logs to file (in addition to console)",
     )
     parser.add_argument(
+        "--log-max-bytes",
+        dest="log_max_bytes",
+        type=int,
+        default=0,
+        help="Rotate log file after this many bytes (0 disables size-based rotation)",
+    )
+    parser.add_argument(
+        "--log-backup-count",
+        dest="log_backup_count",
+        type=int,
+        default=3,
+        help="Number of rotated log files to keep (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--log-rotate-when",
+        dest="log_rotate_when",
+        help="Timed rotation unit (e.g., midnight, H). Disabled by default.",
+    )
+    parser.add_argument(
+        "--log-rotate-interval",
+        dest="log_rotate_interval",
+        type=int,
+        default=1,
+        help="Interval for timed rotation (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--syslog-address",
+        dest="syslog_address",
+        help="Optional syslog destination (path or host:port)",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="Collect and report performance metrics for pipeline stages",
@@ -199,6 +242,11 @@ Examples:
         processes=parsed.processes,
         with_packaging=bool(parsed.with_packaging),
         log_file=Path(parsed.log_file).expanduser().resolve() if parsed.log_file else None,
+        log_max_bytes=int(parsed.log_max_bytes),
+        log_backup_count=int(parsed.log_backup_count),
+        log_rotate_when=parsed.log_rotate_when,
+        log_rotate_interval=int(parsed.log_rotate_interval),
+        syslog_address=parsed.syslog_address,
         profile=bool(parsed.profile),
         validate_config=bool(parsed.validate_config),
     )
@@ -222,6 +270,20 @@ def handle_exception(exc: Exception, diagnostics: DiagnosticCollector) -> None:
     add(diagnostics, "ERROR", "CLI_UNHANDLED", f"Unhandled exception: {exc}")
 
 
+def _normalize_syslog_address(raw: Optional[str]) -> Optional[str | tuple[str, int]]:
+    if not raw:
+        return None
+    if raw.startswith("/") or raw.startswith("@"):
+        return raw
+    if ":" in raw:
+        host, _, port_str = raw.rpartition(":")
+        try:
+            return (host, int(port_str))
+        except ValueError:
+            return raw
+    return raw
+
+
 def run(
     argv: list[str],
     *,
@@ -236,11 +298,27 @@ def run(
     diagnostics = DiagnosticCollector()
     fs = fs or LocalFS()
     now = now or datetime.utcnow
-    setup_logging(verbosity=args.verbose, log_file=args.log_file)
+    syslog_address = _normalize_syslog_address(args.syslog_address)
+    correlation_id = setup_logging(
+        verbosity=args.verbose,
+        log_file=args.log_file,
+        max_bytes=args.log_max_bytes,
+        backup_count=args.log_backup_count,
+        rotate_when=args.log_rotate_when,
+        rotate_interval=args.log_rotate_interval,
+        syslog_address=syslog_address,
+    )
     if args.profile:
         enable_profiling()
     config = config_module.load_and_merge(args, diagnostics, fs)
-    ctx = RunContext(args=args, config=config, diagnostics=diagnostics, filesystem=fs, now=now)
+    ctx = RunContext(
+        args=args,
+        config=config,
+        diagnostics=diagnostics,
+        filesystem=fs,
+        now=now,
+        correlation_id=correlation_id,
+    )
 
     if args.validate_config:
         return _handle_validate_config(ctx)
@@ -297,8 +375,10 @@ def _emit_profile_summary() -> None:
 
 
 def _default_pipeline(ctx: RunContext) -> None:
-    log_stage("discover", verbosity=ctx.args.verbose)
-    graph, contents = discovery.discover(ctx.args.source_dir, ctx.args.entry_makefile, ctx.filesystem, ctx.diagnostics)
+    with log_timed_block("discover", verbosity=ctx.args.verbose):
+        graph, contents = discovery.discover(
+            ctx.args.source_dir, ctx.args.entry_makefile, ctx.filesystem, ctx.diagnostics
+        )
     if exit_code(ctx.diagnostics) != 0:
         return
     for content in contents:
@@ -317,8 +397,10 @@ def _process_file(content, ctx: RunContext) -> None:
 
 
 def _parse_file(content, ctx: RunContext) -> None:
-    log_stage(f"parse:{content.path}", verbosity=ctx.args.verbose)
-    parse_result = make_parser.parse_makefile(content.content, content.path, unknown_factory=ctx.unknown_factory)
+    with log_timed_block(f"parse:{content.path}", verbosity=ctx.args.verbose):
+        parse_result = make_parser.parse_makefile(
+            content.content, content.path, unknown_factory=ctx.unknown_factory
+        )
     for diag in parse_result.diagnostics:
         add(ctx.diagnostics, diag["severity"], diag["code"], diag["message"], diag.get("location"))
     if parse_result.unknown_constructs:
@@ -327,38 +409,38 @@ def _parse_file(content, ctx: RunContext) -> None:
 
 
 def _evaluate_file(content, ctx: RunContext):
-    log_stage(f"evaluate:{content.path}", verbosity=ctx.args.verbose)
-    return evaluator.evaluate_ast(
-        content.parse_result.ast,
-        evaluator.VariableEnv(),
-        ctx.config,
-        ctx.diagnostics,
-        unknown_factory=ctx.unknown_factory,
-    )
+    with log_timed_block(f"evaluate:{content.path}", verbosity=ctx.args.verbose):
+        return evaluator.evaluate_ast(
+            content.parse_result.ast,
+            evaluator.VariableEnv(),
+            ctx.config,
+            ctx.diagnostics,
+            unknown_factory=ctx.unknown_factory,
+        )
 
 
 def _build_ir(facts, ctx: RunContext):
-    log_stage("build", verbosity=ctx.args.verbose)
-    return ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
+    with log_timed_block("build", verbosity=ctx.args.verbose):
+        return ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
 
 
 def _emit_targets(path: str, ir_result, ctx: RunContext) -> None:
     if ir_result.project.unknown_constructs:
         ctx.unknown_constructs.extend(ir_result.project.unknown_constructs)
-    log_stage(f"emit:{path}", verbosity=ctx.args.verbose)
-    options = cmake_emitter.EmitOptions(
-        dry_run=ctx.args.dry_run,
-        packaging=ctx.config.packaging_enabled,
-        namespace=ctx.config.namespace or (ctx.config.project_name or DEFAULT_PROJECT_NAME),
-    )
-    emit_result = cmake_emitter.emit(
-        ir_result.project,
-        ctx.args.output_dir,
-        options=options,
-        fs=ctx.filesystem,
-        diagnostics=ctx.diagnostics,
-        unknown_factory=ctx.unknown_factory,
-    )
+    with log_timed_block(f"emit:{path}", verbosity=ctx.args.verbose):
+        options = cmake_emitter.EmitOptions(
+            dry_run=ctx.args.dry_run,
+            packaging=ctx.config.packaging_enabled,
+            namespace=ctx.config.namespace or (ctx.config.project_name or DEFAULT_PROJECT_NAME),
+        )
+        emit_result = cmake_emitter.emit(
+            ir_result.project,
+            ctx.args.output_dir,
+            options=options,
+            fs=ctx.filesystem,
+            diagnostics=ctx.diagnostics,
+            unknown_factory=ctx.unknown_factory,
+        )
     if emit_result.unknown_constructs:
         ctx.unknown_constructs.extend(emit_result.unknown_constructs)
 

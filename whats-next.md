@@ -183,10 +183,8 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 </current_state>
 
 <todos>
-- Triage and prioritize new discovery regressions captured in TASK-0065 through TASK-0070 (real-world scans from Git, BusyBox, binutils-gdb, OpenSSL).
-- Wire the new regression fixtures in tests/discovery/test_real_world_regressions.py into the CI matrix to keep conversion diagnostics stable.
-- Define and implement TASK-0071 to add source-line context to JSON/markdown diagnostics for easier triage of discovery errors.
-- Break down and schedule make introspection feature: TASK-0072 (flag/config), TASK-0073 (runner), TASK-0074 (dump parser), TASK-0075 (IR reconciliation + diagnostics), TASK-0076 (reporting/metrics).
-- Continue TASK-0061 complexity reductions: remaining >B spots include cli.run/_default_pipeline, exit_codes.get_exit_code, markdown_reporter._recommendations_section, and any lingering diagnostics constructors; plan additional refactors to reach <10 across targets.
-- Completed: lowered complexity for emitter, IR builder, evaluator, parallel, and exit codes; CLI pipeline refactored to A/B; markdown recommendations split into helpers. Remaining hot spots: markdown_reporter._recommendations_section now A but review other B-level functions (e.g., _render_global_interface) later if needed.
+- Process remaining active tasks sequentially (TASK-0063 onward), especially real-world regressions (TASK-0065-TASK-0071) and the make introspection series (TASK-0072-TASK-0076).
+- Run an end-to-end CLI smoke with the new structured logging options (`--log-max-bytes`, timed rotation, syslog) once we have a real project fixture; capture sample JSON snippets for docs.
+- Keep an eye on remaining B-level complexity spots (markdown_reporter rendering helpers and any new logging glue) and trim if they grow.
+- Monitor the python-json-logger dependency and formatter behavior after upgrades to avoid drift from documented logging fields.
 </todos>

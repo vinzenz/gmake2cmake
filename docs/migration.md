@@ -623,7 +623,7 @@ make test
 cat conversion_report.md
 
 # Enable debug logging
-gmake2cmake --log-level debug --config gmake2cmake.yaml
+GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv --config gmake2cmake.yaml
 
 # Compare Make and CMake outputs
 diff -r build/make build/cmake

@@ -133,7 +133,7 @@ def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: Di
         visited.add(node)
         try:
             text = fs.read_text(Path(node))
-        except (OSError, UnicodeDecodeError) as exc:  # pragma: no cover - IO error
+        except (OSError, UnicodeDecodeError, KeyError) as exc:  # pragma: no cover - IO error
             add(
                 diagnostics,
                 "ERROR",

@@ -580,7 +580,7 @@ performance:
 ### Running Conversion
 
 ```bash
-gmake2cmake --config gmake2cmake.yaml --log-level info
+gmake2cmake --config gmake2cmake.yaml -vv
 ```
 
 ### Generated Root CMakeLists.txt

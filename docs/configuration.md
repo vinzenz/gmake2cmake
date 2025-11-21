@@ -408,7 +408,15 @@ gmake2cmake searches for configuration files in this order:
 - Verify file name matches expected pattern
 - Check file is in correct directory
 - Use `--config` flag to explicitly specify file
-- Enable debug logging: `gmake2cmake --log-level debug`
+- Increase verbosity with `-vvv` or `GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake ...`
+
+## Logging and tracing
+
+- Logs are JSON-formatted and include correlation IDs. Override the ID with `GMAKE2CMAKE_CORRELATION_ID=...`.
+- Control verbosity with `-v/-vv/-vvv` or `GMAKE2CMAKE_LOG_LEVEL` (`DEBUG`, `INFO`, etc.).
+- Write logs to disk with `--log-file`; rotate by size/time via `--log-max-bytes`, `--log-backup-count`, `--log-rotate-when`, and `--log-rotate-interval`.
+- Send logs to syslog with `--syslog-address /dev/log` (Unix socket) or `--syslog-address host:514` (UDP).
+- Stage timings are emitted when verbosity is `-v` or higher; use `-vv` for start/stop markers.
 
 ## Configuration Validation
 
