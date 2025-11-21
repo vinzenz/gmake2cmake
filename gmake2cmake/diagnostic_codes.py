@@ -95,6 +95,8 @@ class DiagnosticCode(str, Enum):
     VALIDATION_IDENTIFIER = "VALIDATION_IDENTIFIER"
     VALIDATION_INVALID_VALUE = "VALIDATION_INVALID_VALUE"
     CONFIG_TOO_LARGE = "CONFIG_TOO_LARGE"
+    INTROSPECTION_TIMEOUT = "INTROSPECTION_TIMEOUT"
+    INTROSPECTION_FAILED = "INTROSPECTION_FAILED"
 
 
 # Metadata registry for all diagnostic codes
@@ -340,6 +342,19 @@ _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
         category="VALIDATION",
         default_severity="ERROR",
         description="Invalid freeform input value",
+    ),
+    # Introspection codes
+    "INTROSPECTION_TIMEOUT": DiagnosticMetadata(
+        code="INTROSPECTION_TIMEOUT",
+        category="INTROSPECTION",
+        default_severity="WARN",
+        description="GNU make introspection timed out",
+    ),
+    "INTROSPECTION_FAILED": DiagnosticMetadata(
+        code="INTROSPECTION_FAILED",
+        category="INTROSPECTION",
+        default_severity="WARN",
+        description="GNU make introspection failed",
     ),
 }
 

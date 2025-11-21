@@ -85,7 +85,6 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                 "DISCOVERY_READ_FAIL",
                 f"Failed to read {path}: {exc}",
                 location=node,
-                line=str(lines[line_no - 1]) if lines else None,
             )
         for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()

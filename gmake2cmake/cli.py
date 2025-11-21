@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional, TextIO
 
 from gmake2cmake import config as config_module
+from gmake2cmake import introspection
 from gmake2cmake.cmake import emitter as cmake_emitter
 from gmake2cmake.constants import (
     DEFAULT_OUTPUT_DIR,
@@ -99,6 +100,7 @@ class RunContext:
     unknown_constructs: list[UnknownConstruct] = field(default_factory=list)
     unknown_factory: UnknownConstructFactory = field(default_factory=UnknownConstructFactory)
     correlation_id: str = ""
+    introspection_dump: Optional[str] = None
 
 
 def parse_args(argv: list[str]) -> CLIArgs:
@@ -394,6 +396,9 @@ def _emit_profile_summary() -> None:
 
 
 def _default_pipeline(ctx: RunContext) -> None:
+    if ctx.args.use_make_introspection:
+        result = introspection.run(ctx.args.source_dir, ctx.diagnostics)
+        ctx.introspection_dump = result.stdout
     with log_timed_block("discover", verbosity=ctx.args.verbose):
         graph, contents = discovery.discover(
             ctx.args.source_dir, ctx.args.entry_makefile, ctx.filesystem, ctx.diagnostics
