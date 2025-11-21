@@ -61,7 +61,8 @@ def test_conditional_wildcard_includes_reported_missing() -> None:
     diagnostics = DiagnosticCollector()
     discovery.scan_includes(root, fs, diagnostics)
 
-    assert _has_code(diagnostics, "DISCOVERY_INCLUDE_MISSING")
+    # Wildcard-gated includes should not raise hard missing errors
+    assert not _has_code(diagnostics, "DISCOVERY_INCLUDE_MISSING")
 
 
 def test_kbuild_autoconf_rule_misparsed_and_read_fails() -> None:
@@ -78,7 +79,6 @@ def test_kbuild_autoconf_rule_misparsed_and_read_fails() -> None:
     discovery.discover(root.parent, None, fs, diagnostics)
 
     assert _has_code(diagnostics, "DISCOVERY_INCLUDE_OPTIONAL_MISSING")
-    assert _has_code(diagnostics, "DISCOVERY_INCLUDE_MISSING")
     assert _has_code(diagnostics, "DISCOVERY_READ_FAIL")
 
 

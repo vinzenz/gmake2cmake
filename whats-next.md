@@ -191,4 +191,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Align new adapters/constants/types packages across remaining modules over time; retire direct imports from legacy modules once consumers are updated.
 - Validate real-world template-only trees (binutils-gdb, OpenSSL) now surface DISCOVERY_TEMPLATE_ENTRY guidance; collect outputs after next dry runs.
 - Observe whether DISCOVERY_CYCLE remains acceptable as ERROR severity for reciprocal -C cycles; adjust if we need softer handling for test harnesses.
+- Monitor wildcard-gated include handling to ensure we do not suppress legitimate missing includes; gather feedback from real Git/BusyBox runs.
 </todos>

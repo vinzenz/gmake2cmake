@@ -88,28 +88,33 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
         for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()
             # Check for include statements
-            if stripped.startswith("include") or stripped.startswith("-include"):
+            if stripped.startswith("include ") or stripped.startswith("-include "):
                 optional = stripped.startswith("-include")
-                parts = stripped.split()[1:]
+                parts = [token for token in stripped.split()[1:] if token]
                 for inc in parts:
-                    child = (path.parent / inc).resolve()
+                    if inc.startswith("$(wildcard"):
+                        continue
+                    cleaned = inc.rstrip(":|")
+                    if cleaned.startswith("$(dep_files"):
+                        continue
+                    child = (path.parent / cleaned).resolve()
                     _record_edge(graph, node, child.as_posix())
                     if fs.exists(child):
                         dfs(child)
-                    elif not optional:
-                        add(
-                            diagnostics,
-                            "ERROR",
-                            "DISCOVERY_INCLUDE_MISSING",
-                            f"Missing include {child} from {path}",
-                            location=f"{path}:{line_no}",
-                        )
-                    else:
+                    elif optional:
                         add(
                             diagnostics,
                             "WARN",
                             "DISCOVERY_INCLUDE_OPTIONAL_MISSING",
                             f"Optional include missing {child}",
+                            location=f"{path}:{line_no}",
+                        )
+                    else:
+                        add(
+                            diagnostics,
+                            "ERROR",
+                            "DISCOVERY_INCLUDE_MISSING",
+                            f"Missing include {child} from {path}",
                             location=f"{path}:{line_no}",
                         )
             if "$(MAKE)" in stripped and " -C " in stripped:
