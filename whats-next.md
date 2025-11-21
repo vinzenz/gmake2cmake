@@ -192,4 +192,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Validate real-world template-only trees (binutils-gdb, OpenSSL) now surface DISCOVERY_TEMPLATE_ENTRY guidance; collect outputs after next dry runs.
 - Observe whether DISCOVERY_CYCLE remains acceptable as ERROR severity for reciprocal -C cycles; adjust if we need softer handling for test harnesses.
 - Monitor wildcard-gated include handling to ensure we do not suppress legitimate missing includes; gather feedback from real Git/BusyBox runs.
+- Keep an eye on DISCOVERY_READ_FAIL downgrades for obviously synthetic tokens; ensure real file IO errors still surface as ERROR.
 </todos>

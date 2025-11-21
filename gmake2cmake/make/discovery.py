@@ -185,30 +185,39 @@ def _handle_recursive_make(
 def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: DiagnosticCollector) -> List[MakefileContent]:
     contents: List[MakefileContent] = []
     visited: Set[str] = set()
+    invalid_nodes: Set[str] = set()
+    seen_failures: Set[str] = set()
 
     def visit(node: str, parent: Optional[str]) -> None:
         if node in visited:
             return
         visited.add(node)
+        if any(tok in node for tok in ["$(", "*", "|"]):
+            invalid_nodes.add(node)
+            return
         try:
             text = fs.read_text(Path(node))
             if len(text.encode("utf-8", errors="ignore")) > MAX_FILE_SIZE_BYTES:
-                add(
-                    diagnostics,
-                    "ERROR",
-                    "DISCOVERY_READ_FAIL",
-                    f"Failed to read {node}: exceeds size limit {MAX_FILE_SIZE_BYTES} bytes",
-                    location=node,
-                )
+                if node not in seen_failures:
+                    add(
+                        diagnostics,
+                        "ERROR",
+                        "DISCOVERY_READ_FAIL",
+                        f"Failed to read {node}: exceeds size limit {MAX_FILE_SIZE_BYTES} bytes",
+                        location=node,
+                    )
+                    seen_failures.add(node)
                 return
         except (OSError, UnicodeDecodeError, KeyError) as exc:  # pragma: no cover - IO error
-            add(
-                diagnostics,
-                "ERROR",
-                "DISCOVERY_READ_FAIL",
-                f"Failed to read {node}: {exc}",
-                location=node,
-            )
+            if node not in seen_failures:
+                add(
+                    diagnostics,
+                    "WARN",
+                    "DISCOVERY_READ_FAIL",
+                    f"Failed to read {node}: {exc}",
+                    location=node,
+                )
+                seen_failures.add(node)
             return
         contents.append(MakefileContent(path=node, content=text, included_from=parent))
         for child in sorted(graph.edges.get(node, set())):
