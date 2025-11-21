@@ -83,6 +83,7 @@ class DiagnosticCode(str, Enum):
     DISCOVERY_INCLUDE_MISSING = "DISCOVERY_INCLUDE_MISSING"
     DISCOVERY_INCLUDE_OPTIONAL_MISSING = "DISCOVERY_INCLUDE_OPTIONAL_MISSING"
     DISCOVERY_SUBDIR_MISSING = "DISCOVERY_SUBDIR_MISSING"
+    DISCOVERY_TEMPLATE_ENTRY = "DISCOVERY_TEMPLATE_ENTRY"
 
     # Evaluation-related codes
     EVAL_RECURSIVE_LOOP = "EVAL_RECURSIVE_LOOP"
@@ -292,6 +293,13 @@ _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
         default_severity="WARN",
         description="Subdirectory Makefile not found",
         message_template="Subdir Makefile missing at {path}",
+    ),
+    "DISCOVERY_TEMPLATE_ENTRY": DiagnosticMetadata(
+        code="DISCOVERY_TEMPLATE_ENTRY",
+        category="DISCOVERY",
+        default_severity="WARN",
+        description="Template Makefile detected without generated Makefile",
+        message_template="Template Makefiles found ({templates}); run configure before conversion",
     ),
     # Evaluation codes
     "EVAL_RECURSIVE_LOOP": DiagnosticMetadata(

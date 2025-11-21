@@ -77,6 +77,22 @@ def test_kbuild_autoconf_rule_misparsed_and_read_fails() -> None:
     assert _has_code(diagnostics, "DISCOVERY_READ_FAIL")
 
 
+def test_template_only_tree_reports_guidance() -> None:
+    """Template-only projects should hint at configure/bootstrap steps."""
+    fs = FakeFS()
+    root = Path("/openssl/Makefile.in")
+    fs.store[root] = "all:\n\t@echo template\n"
+    fs.store[Path("/openssl/Makefile.tpl")] = "all:\n\t@echo tpl\n"
+
+    diagnostics = DiagnosticCollector()
+    graph, contents = discovery.discover(root.parent, None, fs, diagnostics)
+
+    assert graph.roots == []
+    assert contents == []
+    assert _has_code(diagnostics, "DISCOVERY_ENTRY_MISSING")
+    assert _has_code(diagnostics, "DISCOVERY_TEMPLATE_ENTRY")
+
+
 def test_make_dash_c_comment_triggers_subdir_missing_warning() -> None:
     """Git's QUIET_SUBDIR placeholder misparses '-C # comment' as a subdir."""
     fs = FakeFS()

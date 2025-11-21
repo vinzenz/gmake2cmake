@@ -681,6 +681,12 @@ When reporting issues, include:
    cat Makefile
    ```
 
+5. **Template Makefiles (autotools/openssl-style):**
+   ```bash
+   ls Makefile.in Makefile.tpl Makefile.def
+   # If only templates exist, run ./configure or ./Configure to generate Makefile
+   ```
+
 4. **Debug output:**
    ```bash
    GMAKE2CMAKE_LOG_LEVEL=DEBUG gmake2cmake -vvv --log-file debug.log

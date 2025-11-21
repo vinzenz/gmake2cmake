@@ -30,7 +30,22 @@ def resolve_entry(source_dir: Path, entry_makefile: Optional[str], fs: FileSyste
         candidate = (source_dir / name).resolve()
         if fs.exists(candidate) and fs.is_file(candidate):
             return candidate
+    template_candidates = ["Makefile.in", "Makefile.tpl", "Makefile.def"]
+    found_templates: List[str] = []
+    for name in template_candidates:
+        candidate = (source_dir / name).resolve()
+        if fs.exists(candidate) and fs.is_file(candidate):
+            found_templates.append(candidate.as_posix())
     add(diagnostics, "ERROR", "DISCOVERY_ENTRY_MISSING", f"No Makefile found in {source_dir}")
+    if found_templates:
+        templates = ", ".join(found_templates)
+        add(
+            diagnostics,
+            "WARN",
+            "DISCOVERY_TEMPLATE_ENTRY",
+            f"Template Makefiles found ({templates}) but no generated Makefile. Run ./configure or ./Configure to bootstrap, or pass --entry-makefile to use a template directly.",
+            location=str(source_dir),
+        )
     return None
 
 

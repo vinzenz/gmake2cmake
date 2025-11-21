@@ -583,6 +583,10 @@ performance:
 gmake2cmake --config gmake2cmake.yaml -vv
 ```
 
+### Template-only trees (autotools/openssl)
+
+If your project only has `Makefile.in` or `Makefile.tpl` and no generated `Makefile`, run the project's bootstrap (e.g., `./configure` or `./Configure`) before using gmake2cmake, or pass `--entry-makefile Makefile.in` explicitly for a read-only dry run.
+
 ### Generated Root CMakeLists.txt
 
 ```cmake
