@@ -53,6 +53,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
     graph = IncludeGraph()
     graph.roots.append(entry.as_posix())
     visited_stack: List[str] = []
+    optional_seen: Set[tuple[str, str]] = set()
 
     def _record_cycle(start_index: int) -> None:
         cycle_nodes = visited_stack[start_index:] + [visited_stack[start_index]]
@@ -88,27 +89,32 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
         for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()
             # Check for include statements
-            if stripped.startswith("include ") or stripped.startswith("-include "):
-                optional = stripped.startswith("-include")
+            if stripped.startswith(("include ", "-include ", "sinclude ")):
+                optional = stripped.startswith(("-include", "sinclude"))
                 parts = [token for token in stripped.split()[1:] if token]
                 for inc in parts:
                     if inc.startswith("$(wildcard"):
                         continue
                     cleaned = inc.rstrip(":|")
-                    if cleaned.startswith("$(dep_files"):
+                    if cleaned.startswith(("$(dep_files", "$(dep_files_present")):
                         continue
+                    if cleaned.startswith(("arch/$", "config.mak", "config.mak.autogen")):
+                        cleaned = cleaned.replace("$(ARCH)", "ARCH")
                     child = (path.parent / cleaned).resolve()
                     _record_edge(graph, node, child.as_posix())
                     if fs.exists(child):
                         dfs(child)
                     elif optional:
-                        add(
-                            diagnostics,
-                            "WARN",
-                            "DISCOVERY_INCLUDE_OPTIONAL_MISSING",
-                            f"Optional include missing {child}",
-                            location=f"{path}:{line_no}",
-                        )
+                        diag_key = (child.as_posix(), f"{path}:{line_no}")
+                        if diag_key not in optional_seen:
+                            add(
+                                diagnostics,
+                                "WARN",
+                                "DISCOVERY_INCLUDE_OPTIONAL_MISSING",
+                                f"Optional include missing {child}",
+                                location=f"{path}:{line_no}",
+                            )
+                            optional_seen.add(diag_key)
                     else:
                         add(
                             diagnostics,

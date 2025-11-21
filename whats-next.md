@@ -194,4 +194,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Monitor wildcard-gated include handling to ensure we do not suppress legitimate missing includes; gather feedback from real Git/BusyBox runs.
 - Keep an eye on DISCOVERY_READ_FAIL downgrades for obviously synthetic tokens; ensure real file IO errors still surface as ERROR.
 - Confirm recursive -C parsing skips placeholders/comments as expected in broader Git fixtures while still warning on genuine missing subdir Makefiles.
+- Watch optional include dedupe (config.mak/autogen/arch/$(ARCH)) for under-reporting; adjust heuristics if real includes go missing.
 </todos>
