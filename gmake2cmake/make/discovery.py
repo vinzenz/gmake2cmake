@@ -85,6 +85,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                 "DISCOVERY_READ_FAIL",
                 f"Failed to read {path}: {exc}",
                 location=node,
+                line=str(lines[line_no - 1]) if lines else None,
             )
         for line_no, line in enumerate(lines, start=1):
             stripped = line.strip()
@@ -104,7 +105,8 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                     _record_edge(graph, node, child.as_posix())
                     if fs.exists(child):
                         dfs(child)
-                    elif optional:
+                        continue
+                    if optional:
                         diag_key = (child.as_posix(), f"{path}:{line_no}")
                         if diag_key not in optional_seen:
                             add(
@@ -113,6 +115,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                                 "DISCOVERY_INCLUDE_OPTIONAL_MISSING",
                                 f"Optional include missing {child}",
                                 location=f"{path}:{line_no}",
+                                line=str(line),
                             )
                             optional_seen.add(diag_key)
                     else:
@@ -122,6 +125,7 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                             "DISCOVERY_INCLUDE_MISSING",
                             f"Missing include {child} from {path}",
                             location=f"{path}:{line_no}",
+                            line=str(line),
                         )
             if "$(MAKE)" in stripped and " -C " in stripped:
                 _handle_recursive_make(
@@ -190,6 +194,7 @@ def _handle_recursive_make(
             "DISCOVERY_SUBDIR_MISSING",
             f"Subdir Makefile missing at {child_path}",
             location=f"{path}:{line_no}",
+            line=str(stripped),
         )
 
 

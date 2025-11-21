@@ -464,6 +464,7 @@ def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:
             "message": d.message,
             "location": _normalize_location(d.location),
             "origin": d.origin or "",
+            "line": d.line or "",
         }
         for d in diagnostics.diagnostics
     ]

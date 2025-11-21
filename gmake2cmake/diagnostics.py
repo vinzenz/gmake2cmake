@@ -23,6 +23,7 @@ class Diagnostic:
         message: Human-readable message
         location: Optional file:line:column location
         origin: Optional origin module identifier
+        line: Optional source line text for additional context
     """
 
     severity: Severity
@@ -30,6 +31,7 @@ class Diagnostic:
     message: str
     location: Optional[str] = None
     origin: Optional[str] = None
+    line: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.severity not in VALID_DIAGNOSTIC_SEVERITIES:
@@ -59,7 +61,7 @@ _SEVERITY_ORDER = {"ERROR": 0, "WARN": 1, "INFO": 2}
 
 
 def _dedupe_key(d: Diagnostic) -> tuple:
-    return (d.severity, d.code, d.message, d.location, d.origin)
+    return (d.severity, d.code, d.message, d.location, d.origin, d.line)
 
 
 def add(
@@ -69,6 +71,7 @@ def add(
     message: str,
     location: Optional[str] = None,
     origin: Optional[str] = None,
+    line: Optional[str] = None,
 ) -> None:
     """Add a diagnostic to the collector, deduplicating identical entries.
 
@@ -83,7 +86,9 @@ def add(
     Returns:
         None
     """
-    diagnostic = Diagnostic(severity=severity, code=code, message=message, location=location, origin=origin)
+    diagnostic = Diagnostic(
+        severity=severity, code=code, message=message, location=location, origin=origin, line=line
+    )
     if _dedupe_key(diagnostic) in {_dedupe_key(d) for d in collector.diagnostics}:
         return
     collector.diagnostics.append(diagnostic)
@@ -151,16 +156,18 @@ def to_json(collector: DiagnosticCollector) -> str:
         JSON string with diagnostics array
 
     """
-    payload: list[DiagnosticDict] = [
-        {
+    payload: list[DiagnosticDict] = []
+    for d in collector.diagnostics:
+        entry: DiagnosticDict = {
             "severity": d.severity,
             "code": d.code,
             "message": d.message,
             "location": d.location or "",
             "origin": d.origin or "",
         }
-        for d in collector.diagnostics
-    ]
+        if d.line:
+            entry["line"] = d.line
+        payload.append(entry)
     return json.dumps(payload, sort_keys=True)
 
 
