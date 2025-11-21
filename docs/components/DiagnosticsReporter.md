@@ -14,9 +14,9 @@ diagnostics collected everywhere
 - **Inputs**: Shared `DiagnosticCollector` populated by all components; output stream for console rendering.
 - **Outputs**: Console summary, JSON string (CLI may write to file), `has_errors` boolean, exit code int.
 - **Behavior details**:
-  - `add/extend` deduplicate on `(severity, code, message, location, origin)`.
+  - `add/extend` deduplicate on `(severity, code, message, location, origin, line)`.
   - `to_console` formats `[SEVERITY] CODE: message (location)`; verbose adds origin and counts.
-  - `to_json` produces stable JSON array with sorted keys for testability.
+  - `to_json` produces stable JSON array with sorted keys for testability and includes `line` when present for source context.
   - `exit_code` returns 1 when any ERROR exists.
 - **Interactions**: CLIController invokes console/JSON rendering; links into CI/CLI exit behavior; no direct printing beyond provided stream.
 - **Spec**: [components/DiagnosticsReporter/SPEC.md](../../components/DiagnosticsReporter/SPEC.md)
