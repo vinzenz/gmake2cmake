@@ -25,6 +25,7 @@ def test_template_only_project_triggers_entry_missing() -> None:
 
     assert entry is None
     assert _has_code(diagnostics, "DISCOVERY_ENTRY_MISSING")
+    assert _has_code(diagnostics, "DISCOVERY_TEMPLATE_ENTRY")
 
 
 def test_recursive_make_backedge_flags_cycle() -> None:
@@ -36,9 +37,13 @@ def test_recursive_make_backedge_flags_cycle() -> None:
     fs.store[perf] = "all:\n\t$(MAKE) -C .. test-lint\n"
 
     diagnostics = DiagnosticCollector()
-    discovery.scan_includes(root, fs, diagnostics)
+    graph, contents = discovery.discover(root.parent, None, fs, diagnostics)
 
     assert _has_code(diagnostics, "DISCOVERY_CYCLE")
+    assert graph.cycles
+    assert contents == []
+    assert graph.edges[root.as_posix()] == {perf.as_posix()}
+    assert graph.edges[perf.as_posix()] == {root.as_posix()}
 
 
 def test_conditional_wildcard_includes_reported_missing() -> None:

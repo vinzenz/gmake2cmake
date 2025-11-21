@@ -54,18 +54,23 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
     graph.roots.append(entry.as_posix())
     visited_stack: List[str] = []
 
+    def _record_cycle(start_index: int) -> None:
+        cycle_nodes = visited_stack[start_index:] + [visited_stack[start_index]]
+        if cycle_nodes in graph.cycles:
+            return
+        graph.cycles.append(cycle_nodes)
+        add(
+            diagnostics,
+            "ERROR",
+            "DISCOVERY_CYCLE",
+            f"Recursive make/include cycle: {' -> '.join(cycle_nodes)}",
+            location=cycle_nodes[-1],
+        )
+
     def dfs(path: Path) -> None:
         node = path.as_posix()
         if node in visited_stack:
-            cycle_index = visited_stack.index(node)
-            graph.cycles.append(visited_stack[cycle_index:] + [node])
-            add(
-                diagnostics,
-                "ERROR",
-                "DISCOVERY_CYCLE",
-                f"Include cycle detected: {' -> '.join(graph.cycles[-1])}",
-                location=node,
-            )
+            _record_cycle(visited_stack.index(node))
             return
         visited_stack.append(node)
         graph.nodes.add(node)
@@ -107,28 +112,19 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
                             f"Optional include missing {child}",
                             location=f"{path}:{line_no}",
                         )
-            # Check for recursive make patterns $(MAKE) -C subdir
             if "$(MAKE)" in stripped and " -C " in stripped:
-                # Extract directory after -C flag
-                try:
-                    dir_part = stripped.split("-C", 1)[1].strip().split()[0]
-                    # Remove variable references if present (e.g., $(VAR) becomes VAR)
-                    dir_part = dir_part.replace("$(", "").replace(")", "").replace("${", "").replace("}", "")
-                    child_path = (path.parent / dir_part / "Makefile").resolve()
-                    _record_edge(graph, node, child_path.as_posix())
-                    if fs.exists(child_path):
-                        dfs(child_path)
-                    else:
-                        add(
-                            diagnostics,
-                            "WARN",
-                            "DISCOVERY_SUBDIR_MISSING",
-                            f"Subdir Makefile missing at {child_path}",
-                            location=f"{path}:{line_no}",
-                        )
-                except (IndexError, ValueError):
-                    # Ignore malformed -C directives that cannot be parsed
-                    pass
+                _handle_recursive_make(
+                    stripped,
+                    path,
+                    line_no,
+                    fs,
+                    diagnostics,
+                    graph,
+                    node,
+                    dfs,
+                    _record_cycle,
+                    visited_stack,
+                )
         visited_stack.pop()
 
     dfs(entry)
@@ -137,6 +133,48 @@ def scan_includes(entry: Path, fs: FileSystemAdapter, diagnostics: DiagnosticCol
 
 def _record_edge(graph: IncludeGraph, parent: str, child: str) -> None:
     graph.edges.setdefault(parent, set()).add(child)
+
+
+def _normalize_recursive_dir(token: str) -> str:
+    cleaned = token.replace("$(", "").replace(")", "").replace("${", "").replace("}", "")
+    return cleaned.strip()
+
+
+def _handle_recursive_make(
+    stripped: str,
+    path: Path,
+    line_no: int,
+    fs: FileSystemAdapter,
+    diagnostics: DiagnosticCollector,
+    graph: IncludeGraph,
+    node: str,
+    dfs_fn,
+    record_cycle,
+    visited_stack: List[str],
+) -> None:
+    try:
+        dir_part = stripped.split("-C", 1)[1].strip().split()[0]
+    except (IndexError, ValueError):
+        return
+    if not dir_part:
+        return
+    normalized_dir = _normalize_recursive_dir(dir_part)
+    child_path = (path.parent / normalized_dir / "Makefile").resolve()
+    child_node = child_path.as_posix()
+    _record_edge(graph, node, child_node)
+    if child_node in visited_stack:
+        record_cycle(visited_stack.index(child_node))
+        return
+    if fs.exists(child_path):
+        dfs_fn(child_path)
+    else:
+        add(
+            diagnostics,
+            "WARN",
+            "DISCOVERY_SUBDIR_MISSING",
+            f"Subdir Makefile missing at {child_path}",
+            location=f"{path}:{line_no}",
+        )
 
 
 def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: DiagnosticCollector) -> List[MakefileContent]:

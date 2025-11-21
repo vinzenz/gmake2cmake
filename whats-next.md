@@ -190,4 +190,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Watch for false positives from the new validation guards (entry Makefile traversal, config size cap) and tune thresholds if real-world scans flag legitimate inputs.
 - Align new adapters/constants/types packages across remaining modules over time; retire direct imports from legacy modules once consumers are updated.
 - Validate real-world template-only trees (binutils-gdb, OpenSSL) now surface DISCOVERY_TEMPLATE_ENTRY guidance; collect outputs after next dry runs.
+- Observe whether DISCOVERY_CYCLE remains acceptable as ERROR severity for reciprocal -C cycles; adjust if we need softer handling for test harnesses.
 </todos>
