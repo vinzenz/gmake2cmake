@@ -188,4 +188,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Keep an eye on remaining B-level complexity spots (markdown_reporter rendering helpers and any new logging glue) and trim if they grow.
 - Monitor the python-json-logger dependency and formatter behavior after upgrades to avoid drift from documented logging fields.
 - Watch for false positives from the new validation guards (entry Makefile traversal, config size cap) and tune thresholds if real-world scans flag legitimate inputs.
+- Align new adapters/constants/types packages across remaining modules over time; retire direct imports from legacy modules once consumers are updated.
 </todos>
