@@ -141,7 +141,10 @@ def _record_edge(graph: IncludeGraph, parent: str, child: str) -> None:
 
 
 def _normalize_recursive_dir(token: str) -> str:
-    cleaned = token.replace("$(", "").replace(")", "").replace("${", "").replace("}", "")
+    cleaned = token.split("#", 1)[0]  # strip inline comments
+    cleaned = cleaned.replace("$(", "").replace(")", "").replace("${", "").replace("}", "")
+    cleaned = cleaned.replace("$@", "").replace("$<", "").replace("$^", "")
+    cleaned = cleaned.replace("$$", "")
     return cleaned.strip()
 
 
@@ -164,6 +167,8 @@ def _handle_recursive_make(
     if not dir_part:
         return
     normalized_dir = _normalize_recursive_dir(dir_part)
+    if not normalized_dir or normalized_dir.startswith(("#", "$")):
+        return
     child_path = (path.parent / normalized_dir / "Makefile").resolve()
     child_node = child_path.as_posix()
     _record_edge(graph, node, child_node)

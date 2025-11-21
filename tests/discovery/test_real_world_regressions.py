@@ -107,4 +107,5 @@ def test_make_dash_c_comment_triggers_subdir_missing_warning() -> None:
     diagnostics = DiagnosticCollector()
     discovery.scan_includes(root, fs, diagnostics)
 
-    assert _has_code(diagnostics, "DISCOVERY_SUBDIR_MISSING")
+    # Placeholder after -C plus comment should now be ignored
+    assert not _has_code(diagnostics, "DISCOVERY_SUBDIR_MISSING")
