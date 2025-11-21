@@ -116,6 +116,7 @@ class ConfigModel:
     packaging_enabled: bool = False
     strict: bool = False
     error_recovery_enabled: bool = True
+    use_make_introspection: bool = False
 
 
 def load_yaml(path: Path, *, fs: FileSystemAdapter, diagnostics: DiagnosticCollector) -> Dict:
@@ -176,6 +177,7 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
         "packaging_enabled",
         "strict",
         "error_recovery_enabled",
+        "use_make_introspection",
     }
     _report_unknown_keys(raw, allowed_keys, strict, diagnostics)
 
@@ -200,6 +202,7 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
     model.packaging_enabled = bool(raw.get("packaging_enabled", False))
     model.strict = bool(raw.get("strict", strict))
     model.error_recovery_enabled = bool(raw.get("error_recovery_enabled", True))
+    model.use_make_introspection = bool(raw.get("use_make_introspection", False))
     if model.strict:
         model.error_recovery_enabled = False
     return model

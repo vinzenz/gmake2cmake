@@ -195,4 +195,6 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Keep an eye on DISCOVERY_READ_FAIL downgrades for obviously synthetic tokens; ensure real file IO errors still surface as ERROR.
 - Confirm recursive -C parsing skips placeholders/comments as expected in broader Git fixtures while still warning on genuine missing subdir Makefiles.
 - Watch optional include dedupe (config.mak/autogen/arch/$(ARCH)) for under-reporting; adjust heuristics if real includes go missing.
+- Validate downstream consumers handle the new `line` field in `report.json`; update tooling if it assumes the old schema.
+- Keep introspection flag opt-in and verify diagnostics are clear when make is missing.
 </todos>

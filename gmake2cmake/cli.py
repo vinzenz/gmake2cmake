@@ -73,6 +73,7 @@ class CLIArgs:
     syslog_address: Optional[str] = None
     profile: bool = False
     validate_config: bool = False
+    use_make_introspection: bool = False
 
 
 @dataclass
@@ -226,6 +227,11 @@ Examples:
         action="store_true",
         help="Validate configuration file and exit without conversion",
     )
+    parser.add_argument(
+        "--use-make-introspection",
+        action="store_true",
+        help="Opt-in to GNU make introspection (runs 'make -pn' in source_dir)",
+    )
     parsed = parser.parse_args(argv)
     if not str(parsed.source_dir):
         raise ValueError("source_dir cannot be empty")
@@ -250,6 +256,7 @@ Examples:
         syslog_address=parsed.syslog_address,
         profile=bool(parsed.profile),
         validate_config=bool(parsed.validate_config),
+        use_make_introspection=bool(parsed.use_make_introspection),
     )
 
 
@@ -285,6 +292,11 @@ def _normalize_syslog_address(raw: Optional[str]) -> Optional[str | tuple[str, i
     return raw
 
 
+def _make_in_path() -> bool:
+    from shutil import which
+    return which("make") is not None
+
+
 def run(
     argv: list[str],
     *,
@@ -301,6 +313,8 @@ def run(
     now = now or datetime.utcnow
     syslog_address = _normalize_syslog_address(args.syslog_address)
     validate_cli_args(args, diagnostics)
+    if args.use_make_introspection and not _make_in_path():
+        add(diagnostics, "ERROR", "CLI_UNHANDLED", "GNU make not found in PATH; introspection requires 'make'")
     if exit_code(diagnostics) != 0:
         to_console(diagnostics, stream=_stdout(), verbose=True)
         return exit_code(diagnostics)

@@ -59,6 +59,15 @@ def test_run_handles_invalid_args(monkeypatch):
     assert "Unhandled exception" in buf.getvalue()
 
 
+def test_introspection_flag_requires_make(monkeypatch):
+    buf = io.StringIO()
+    monkeypatch.setattr(cli, "_stdout", lambda: buf)
+    monkeypatch.setattr(cli, "_make_in_path", lambda: False)
+    code = cli.run(["--source-dir", ".", "--use-make-introspection"], fs=FakeFS())
+    assert code == 1
+    assert "GNU make not found" in buf.getvalue()
+
+
 def test_main_exits_with_run_code(monkeypatch):
     called = {}
 
