@@ -187,4 +187,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Run an end-to-end CLI smoke with the new structured logging options (`--log-max-bytes`, timed rotation, syslog) once we have a real project fixture; capture sample JSON snippets for docs.
 - Keep an eye on remaining B-level complexity spots (markdown_reporter rendering helpers and any new logging glue) and trim if they grow.
 - Monitor the python-json-logger dependency and formatter behavior after upgrades to avoid drift from documented logging fields.
+- Watch for false positives from the new validation guards (entry Makefile traversal, config size cap) and tune thresholds if real-world scans flag legitimate inputs.
 </todos>

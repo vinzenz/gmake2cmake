@@ -89,6 +89,12 @@ class DiagnosticCode(str, Enum):
     EVAL_NO_SOURCE = "EVAL_NO_SOURCE"
     UNKNOWN_CONSTRUCT = "UNKNOWN_CONSTRUCT"
 
+    # Validation-related codes
+    VALIDATION_PATH = "VALIDATION_PATH"
+    VALIDATION_IDENTIFIER = "VALIDATION_IDENTIFIER"
+    VALIDATION_INVALID_VALUE = "VALIDATION_INVALID_VALUE"
+    CONFIG_TOO_LARGE = "CONFIG_TOO_LARGE"
+
 
 # Metadata registry for all diagnostic codes
 _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
@@ -211,6 +217,12 @@ _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
         description="Unknown configuration key",
         message_template="Unknown config key: {key}",
     ),
+    "CONFIG_TOO_LARGE": DiagnosticMetadata(
+        code="CONFIG_TOO_LARGE",
+        category="CONFIG",
+        default_severity="ERROR",
+        description="Configuration file exceeds allowed size",
+    ),
     "CONFIG_CUSTOM_RULE_INVALID": DiagnosticMetadata(
         code="CONFIG_CUSTOM_RULE_INVALID",
         category="CONFIG",
@@ -301,6 +313,25 @@ _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
         category="EVAL",
         default_severity="WARN",
         description="Unrecognized Makefile construct",
+    ),
+    # Validation codes
+    "VALIDATION_PATH": DiagnosticMetadata(
+        code="VALIDATION_PATH",
+        category="VALIDATION",
+        default_severity="ERROR",
+        description="Invalid or unsafe path input",
+    ),
+    "VALIDATION_IDENTIFIER": DiagnosticMetadata(
+        code="VALIDATION_IDENTIFIER",
+        category="VALIDATION",
+        default_severity="ERROR",
+        description="Invalid identifier input",
+    ),
+    "VALIDATION_INVALID_VALUE": DiagnosticMetadata(
+        code="VALIDATION_INVALID_VALUE",
+        category="VALIDATION",
+        default_severity="ERROR",
+        description="Invalid freeform input value",
     ),
 }
 

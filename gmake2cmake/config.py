@@ -14,6 +14,7 @@ from gmake2cmake.constants import (
 )
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.fs import FileSystemAdapter
+from gmake2cmake.validation import enforce_size_limit, validate_identifier_field
 
 
 def _sanitize_namespace(name: Optional[str]) -> Optional[str]:
@@ -136,6 +137,8 @@ def load_yaml(path: Path, *, fs: FileSystemAdapter, diagnostics: DiagnosticColle
     except (IOError, OSError) as exc:  # pragma: no cover - IO error path
         add(diagnostics, "ERROR", "CONFIG_READ_FAIL", f"Failed to read config: {exc}")
         return {}
+    if not enforce_size_limit(raw_text, path, diagnostics):
+        return {}
     try:
         data = yaml.safe_load(raw_text) or {}
     except yaml.YAMLError as exc:  # pragma: no cover - parse error
@@ -177,7 +180,7 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
     _report_unknown_keys(raw, allowed_keys, strict, diagnostics)
 
     project_name = _extract_string_field(raw, "project_name", diagnostics)
-    model.project_name = project_name
+    model.project_name = validate_identifier_field(project_name, "project_name", diagnostics) if project_name else project_name
 
     version = _extract_string_field(raw, "version", diagnostics)
     model.version = version
@@ -185,7 +188,8 @@ def parse_model(raw: Dict, strict: bool, diagnostics: DiagnosticCollector) -> Co
     namespace = _extract_string_field(raw, "namespace", diagnostics)
     if not namespace:
         namespace = project_name if isinstance(project_name, str) else None
-    model.namespace = _sanitize_namespace(namespace)
+    validated_namespace = validate_identifier_field(namespace, "namespace", diagnostics) if namespace else namespace
+    model.namespace = _sanitize_namespace(validated_namespace)
     model.languages = raw.get("languages")
     model.flag_mappings = dict(raw.get("flag_mappings", {}) or {})
     model.ignore_paths = _normalize_ignore_paths(raw.get("ignore_paths", []))

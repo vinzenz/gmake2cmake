@@ -28,6 +28,7 @@ from gmake2cmake.make import discovery, evaluator
 from gmake2cmake.make import parser as make_parser
 from gmake2cmake.markdown_reporter import MarkdownReporter
 from gmake2cmake.profiling import disable_profiling, enable_profiling, get_metrics
+from gmake2cmake.validation import validate_cli_args
 
 
 @dataclass
@@ -299,6 +300,10 @@ def run(
     fs = fs or LocalFS()
     now = now or datetime.utcnow
     syslog_address = _normalize_syslog_address(args.syslog_address)
+    validate_cli_args(args, diagnostics)
+    if exit_code(diagnostics) != 0:
+        to_console(diagnostics, stream=_stdout(), verbose=True)
+        return exit_code(diagnostics)
     correlation_id = setup_logging(
         verbosity=args.verbose,
         log_file=args.log_file,

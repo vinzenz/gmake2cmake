@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set
 
 from gmake2cmake.diagnostics import DiagnosticCollector, add
 from gmake2cmake.fs import FileSystemAdapter
+from gmake2cmake.security import MAX_FILE_SIZE_BYTES
 
 
 @dataclass
@@ -133,6 +134,15 @@ def collect_contents(graph: IncludeGraph, fs: FileSystemAdapter, diagnostics: Di
         visited.add(node)
         try:
             text = fs.read_text(Path(node))
+            if len(text.encode("utf-8", errors="ignore")) > MAX_FILE_SIZE_BYTES:
+                add(
+                    diagnostics,
+                    "ERROR",
+                    "DISCOVERY_READ_FAIL",
+                    f"Failed to read {node}: exceeds size limit {MAX_FILE_SIZE_BYTES} bytes",
+                    location=node,
+                )
+                return
         except (OSError, UnicodeDecodeError, KeyError) as exc:  # pragma: no cover - IO error
             add(
                 diagnostics,

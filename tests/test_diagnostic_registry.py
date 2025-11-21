@@ -38,7 +38,7 @@ def test_get_metadata_for_all_codes():
     for code in DiagnosticCode:
         metadata = get_metadata(code.value)
         assert metadata.code == code.value
-        assert metadata.category in ["CLI", "CONFIG", "DISCOVERY", "EMIT", "EVAL", "IR", "TEST"]
+        assert metadata.category in ["CLI", "CONFIG", "DISCOVERY", "EMIT", "EVAL", "IR", "TEST", "VALIDATION"]
         assert metadata.default_severity in ["ERROR", "WARN", "INFO"]
 
 
@@ -101,7 +101,7 @@ def test_all_categories_documented():
 def test_list_codes_by_category():
     """Test category listing."""
     categories = list_codes_by_category()
-    expected_categories = ["CLI", "CONFIG", "DISCOVERY", "EMIT", "EVAL", "IR", "TEST"]
+    expected_categories = ["CLI", "CONFIG", "DISCOVERY", "EMIT", "EVAL", "IR", "TEST", "VALIDATION"]
     assert set(categories.keys()) == set(expected_categories)
 
     # Verify some codes are in expected categories
