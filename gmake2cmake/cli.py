@@ -101,6 +101,29 @@ class RunContext:
     unknown_factory: UnknownConstructFactory = field(default_factory=UnknownConstructFactory)
     correlation_id: str = ""
     introspection_dump: Optional[str] = None
+    introspection_summary: Optional["IntrospectionSummary"] = None
+
+
+@dataclass
+class IntrospectionSummary:
+    enabled: bool
+    targets_total: int = 0
+    validated_count: int = 0
+    modified_count: int = 0
+    mismatch_count: int = 0
+    failure_count: int = 0
+    added_count: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "introspection_enabled": bool(self.enabled),
+            "targets_total": int(self.targets_total),
+            "validated_count": int(self.validated_count),
+            "modified_count": int(self.modified_count),
+            "mismatch_count": int(self.mismatch_count),
+            "failure_count": int(self.failure_count),
+            "added_count": int(self.added_count),
+        }
 
 
 def parse_args(argv: list[str]) -> CLIArgs:
@@ -347,9 +370,22 @@ def run(
     _execute_pipeline(ctx, diagnostics, pipeline_fn)
     if args.profile:
         _emit_profile_summary()
+    summary = _make_introspection_summary(ctx)
+    if args.verbose and summary.enabled:
+        logging.getLogger("gmake2cmake.pipeline").info(
+            "introspection summary",
+            extra={"event": "introspection_summary", **summary.to_dict()},
+        )
     if args.report:
         project_name = ctx.config.project_name or ctx.args.source_dir.name or DEFAULT_PROJECT_NAME
-        _write_report(args.output_dir, diagnostics, fs, ctx.unknown_constructs, project_name=project_name)
+        _write_report(
+            args.output_dir,
+            diagnostics,
+            fs,
+            ctx.unknown_constructs,
+            project_name=project_name,
+            introspection_summary=summary,
+        )
     to_console(diagnostics, stream=_stdout(), verbose=bool(args.verbose), unknown_count=len(ctx.unknown_constructs))
     return exit_code(diagnostics)
 
@@ -397,7 +433,8 @@ def _emit_profile_summary() -> None:
 
 def _default_pipeline(ctx: RunContext) -> None:
     if ctx.args.use_make_introspection:
-        result = introspection.run(ctx.args.source_dir, ctx.diagnostics)
+        with log_timed_block("introspection", verbosity=ctx.args.verbose):
+            result = introspection.run(ctx.args.source_dir, ctx.diagnostics)
         ctx.introspection_dump = result.stdout
     with log_timed_block("discover", verbosity=ctx.args.verbose):
         graph, contents = discovery.discover(
@@ -449,6 +486,9 @@ def _build_ir(facts, ctx: RunContext):
     if ctx.introspection_dump:
         data = introspection_parser.parse_dump(ctx.introspection_dump)
         result.project = introspection_reconcile.reconcile(result.project, data, ctx.diagnostics)
+    ctx.introspection_summary = _compute_introspection_summary(
+        ctx.args.use_make_introspection, result.project, ctx.diagnostics
+    )
     return result
 
 
@@ -473,6 +513,51 @@ def _emit_targets(path: str, ir_result, ctx: RunContext) -> None:
         ctx.unknown_constructs.extend(emit_result.unknown_constructs)
 
 
+def _count_diagnostics(diagnostics: DiagnosticCollector, codes: set[str]) -> int:
+    return sum(1 for d in diagnostics.diagnostics if d.code in codes)
+
+
+def _compute_introspection_summary(
+    enabled: bool,
+    project,
+    diagnostics: DiagnosticCollector,
+) -> IntrospectionSummary:
+    mismatch_count = _count_diagnostics(diagnostics, {"INTROSPECTION_MISMATCH"})
+    failure_count = _count_diagnostics(diagnostics, {"INTROSPECTION_FAILED", "INTROSPECTION_TIMEOUT"})
+    if not enabled or project is None:
+        return IntrospectionSummary(
+            enabled=enabled,
+            mismatch_count=mismatch_count,
+            failure_count=failure_count,
+        )
+
+    targets_total = len(project.targets)
+    validated_count = sum(1 for t in project.targets if getattr(t, "validated_by_introspection", False))
+    added_count = sum(1 for t in project.targets if getattr(t, "origin", "static") == "introspection")
+    modified_count = sum(
+        1
+        for t in project.targets
+        if (
+            getattr(t, "origin", "static") == "introspection"
+            or (
+                getattr(t, "origin", "static") == "static"
+                and getattr(t, "introspection_commands", [])
+                and not getattr(t, "validated_by_introspection", False)
+            )
+        )
+    )
+
+    return IntrospectionSummary(
+        enabled=enabled,
+        targets_total=targets_total,
+        validated_count=validated_count,
+        modified_count=modified_count,
+        mismatch_count=mismatch_count,
+        failure_count=failure_count,
+        added_count=added_count,
+    )
+
+
 def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:
     """Serialize diagnostics to JSON-compatible format."""
     def _normalize_location(loc: Optional[str]) -> str:
@@ -493,6 +578,28 @@ def _serialize_diagnostics(diagnostics: DiagnosticCollector) -> list[dict]:
     ]
 
 
+def _make_introspection_summary(ctx: RunContext) -> IntrospectionSummary:
+    mismatch_count = _count_diagnostics(ctx.diagnostics, {"INTROSPECTION_MISMATCH"})
+    failure_count = _count_diagnostics(ctx.diagnostics, {"INTROSPECTION_FAILED", "INTROSPECTION_TIMEOUT"})
+    if ctx.introspection_summary is None:
+        return IntrospectionSummary(
+            enabled=ctx.args.use_make_introspection,
+            mismatch_count=mismatch_count,
+            failure_count=failure_count,
+        )
+
+    summary = ctx.introspection_summary
+    return IntrospectionSummary(
+        enabled=ctx.args.use_make_introspection,
+        targets_total=summary.targets_total,
+        validated_count=summary.validated_count,
+        modified_count=summary.modified_count,
+        mismatch_count=mismatch_count,
+        failure_count=failure_count,
+        added_count=summary.added_count,
+    )
+
+
 def _write_report(
     output_dir: Path,
     diagnostics: DiagnosticCollector,
@@ -500,14 +607,21 @@ def _write_report(
     unknowns: list[UnknownConstruct],
     *,
     project_name: str,
+    introspection_summary: Optional[IntrospectionSummary] = None,
 ) -> None:
     report_path = output_dir / REPORT_JSON_FILENAME
     markdown_path = output_dir / REPORT_MD_FILENAME
     diag_payload = _serialize_diagnostics(diagnostics)
     unknown_payload = [unknown_to_dict(u) for u in unknowns]
-    json_report = {"diagnostics": diag_payload, "unknown_constructs": unknown_payload}
+    summary = introspection_summary or IntrospectionSummary(enabled=False)
+    introspection_payload = summary.to_dict()
+    json_report = {
+        "diagnostics": diag_payload,
+        "unknown_constructs": unknown_payload,
+        "introspection": introspection_payload,
+    }
     reporter = MarkdownReporter(project_name)
-    markdown = reporter.generate_report(diagnostics, unknowns)
+    markdown = reporter.generate_report(diagnostics, unknowns, introspection_summary=introspection_payload)
     try:
         fs.makedirs(report_path.parent)
         fs.write_text(report_path, json.dumps(json_report, sort_keys=True))

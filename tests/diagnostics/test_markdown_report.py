@@ -210,3 +210,23 @@ def test_markdown_reporter_deterministic_category_order():
 
     # Should be in alphabetical order
     assert apple_pos < mango_pos < zebra_pos
+
+
+def test_markdown_report_includes_introspection_summary():
+    collector = DiagnosticCollector()
+    summary = {
+        "introspection_enabled": True,
+        "targets_total": 3,
+        "validated_count": 2,
+        "modified_count": 1,
+        "mismatch_count": 1,
+        "failure_count": 0,
+        "added_count": 1,
+    }
+
+    reporter = MarkdownReporter("Test")
+    report = reporter.generate_report(collector, [], introspection_summary=summary)
+
+    assert "Introspection" in report
+    assert "Validated Targets: 2/3" in report
+    assert "Mismatches: 1" in report

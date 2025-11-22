@@ -46,7 +46,9 @@ def test_run_propagates_errors_and_report(tmp_path, monkeypatch):
     assert exit_code == 0
     report_path = next(path for path in fs.store if path.name == "report.json")
     payload = json.loads(fs.store[report_path])
-    assert "diagnostics" in payload and "unknown_constructs" in payload
+    assert "diagnostics" in payload and "unknown_constructs" in payload and "introspection" in payload
+    assert payload["introspection"]["introspection_enabled"] is False
+    assert payload["introspection"]["validated_count"] == 0
     report_md = next(path for path in fs.store if path.name == "report.md")
     assert "Unknown Constructs" in fs.store[report_md]
 

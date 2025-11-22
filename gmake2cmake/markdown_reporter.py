@@ -42,6 +42,7 @@ class MarkdownReporter:
         diagnostics_collector: DiagnosticCollector,
         unknown_constructs: List[UnknownConstruct],
         metrics: Optional[ConversionMetrics] = None,
+        introspection_summary: Optional[dict] = None,
     ) -> str:
         """Generate a complete Markdown report.
 
@@ -49,6 +50,7 @@ class MarkdownReporter:
             diagnostics_collector: Collector with all diagnostics.
             unknown_constructs: List of unknown constructs encountered.
             metrics: Optional metrics about the conversion.
+            introspection_summary: Optional summary of make introspection results.
 
         Returns:
             Markdown-formatted report string.
@@ -58,7 +60,7 @@ class MarkdownReporter:
 
         sections = [
             self._header_section(),
-            self._summary_section(metrics),
+            self._summary_section(metrics, introspection_summary),
             self._statistics_section(diagnostics_collector, unknown_constructs),
             self._diagnostics_section(diagnostics_collector),
             self._unknown_constructs_section(unknown_constructs),
@@ -75,17 +77,31 @@ class MarkdownReporter:
 **Generated:** {self.generated_at.strftime('%Y-%m-%d %H:%M:%S')}
 """
 
-    def _summary_section(self, metrics: ConversionMetrics) -> str:
+    def _summary_section(self, metrics: ConversionMetrics, introspection_summary: Optional[dict] = None) -> str:
         """Generate the summary section."""
-        return f"""## Summary
+        lines = [
+            f"- **Files Analyzed:** {metrics.files_analyzed} / {metrics.total_files}",
+            f"- **Targets Found:** {metrics.total_targets}",
+            f"- **Conversion Coverage:** {metrics.conversion_coverage_percent:.1f}%",
+            f"- **Errors:** {metrics.error_count}",
+            f"- **Warnings:** {metrics.warning_count}",
+            f"- **Unknown Constructs:** {metrics.unknown_constructs_count}",
+        ]
+        if introspection_summary is not None:
+            status = "enabled" if introspection_summary.get("introspection_enabled") else "disabled"
+            lines.append(f"- **Introspection:** {status}")
+            if introspection_summary.get("introspection_enabled"):
+                validated = introspection_summary.get("validated_count", 0)
+                total = introspection_summary.get("targets_total", 0)
+                modified = introspection_summary.get("modified_count", 0)
+                mismatches = introspection_summary.get("mismatch_count", 0)
+                failures = introspection_summary.get("failure_count", 0)
+                lines.append(f"  - Validated Targets: {validated}/{total}")
+                lines.append(f"  - Modified Targets: {modified}")
+                lines.append(f"  - Mismatches: {mismatches}")
+                lines.append(f"  - Failures: {failures}")
 
-- **Files Analyzed:** {metrics.files_analyzed} / {metrics.total_files}
-- **Targets Found:** {metrics.total_targets}
-- **Conversion Coverage:** {metrics.conversion_coverage_percent:.1f}%
-- **Errors:** {metrics.error_count}
-- **Warnings:** {metrics.warning_count}
-- **Unknown Constructs:** {metrics.unknown_constructs_count}
-"""
+        return "## Summary\n\n" + "\n".join(lines) + "\n"
 
     def _statistics_section(
         self, diagnostics_collector: DiagnosticCollector, unknown_constructs: List[UnknownConstruct]
@@ -239,6 +255,7 @@ def write_report(
     unknown_constructs: List[UnknownConstruct],
     project_name: str = "Unnamed Project",
     metrics: Optional[ConversionMetrics] = None,
+    introspection_summary: Optional[dict] = None,
 ) -> None:
     """Write a Markdown report to disk.
 
@@ -248,9 +265,10 @@ def write_report(
         unknown_constructs: List of unknown constructs.
         project_name: Name of the project.
         metrics: Optional metrics about the conversion.
+        introspection_summary: Optional summary of make introspection results.
     """
     reporter = MarkdownReporter(project_name)
     report_content = reporter.generate_report(
-        diagnostics_collector, unknown_constructs, metrics
+        diagnostics_collector, unknown_constructs, metrics, introspection_summary=introspection_summary
     )
     report_path.write_text(report_content, encoding="utf-8")

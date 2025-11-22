@@ -2,7 +2,7 @@
 <product>gmake2cmake: CLI that ingests GNU Make projects (single/recursive), builds an internal IR, and emits modern CMakeLists.txt with diagnostics and reports. Primary language: Python 3.11+. All code linted (ruff/flake8 equivalent) and tested (pytest) with unit+integration coverage.</product>
 <runtime>
 - Inputs: Makefiles (default or -f override), source tree, optional YAML config, flags (--source-dir, --entry-makefile, --output-dir, --config, --dry-run, --report, --with-packaging).
-- Outputs: Generated CMakeLists.txt files (root + optional subdirs), console diagnostics, optional JSON diagnostics report.
+- Outputs: Generated CMakeLists.txt files (root + optional subdirs), console diagnostics, optional JSON diagnostics report (diagnostics, unknowns, introspection summary), Markdown summary.
 - Non-functional: Medium projects complete in seconds/minutes; use caching and optional multiprocessing in evaluators; deterministic outputs; no network I/O during conversion.
 </runtime>
 <standards>
@@ -37,7 +37,7 @@
 4) MakeEvaluator resolves AST with variable environment + config overrides; expands pattern rules; infers compilation commands; identifies project-global config files/variables (e.g., config.mk/rules.mk/defs.mk and top-level var blocks); produces raw build facts (targets, sources, flags, commands, globals) + diagnostics/UnknownConstruct entries for unsupported functions or conditionals.
 5) IRBuilder normalizes build facts into IR; applies config mappings for targets/flags/ignores; constructs ProjectGlobalConfig from discovered globals and ConfigModel overrides; infers internal vs external libs; attaches namespaced aliases; aggregates UnknownConstructs into Project; validates IR invariants (unique target names, paths exist where required unless ignored).
 6) CMakeEmitter renders IR to CMake files respecting output-dir; centralizes ProjectGlobalConfig into root CMakeLists.txt and optional ProjectGlobalConfig.cmake module; emits namespaced ALIAS targets (`Project::Name`) for internal libs; maps linkages to namespaced targets vs raw libs; supports interface/imported targets; optional packaging mode emits install/export rules and MyProjectConfig.cmake; supports dry-run (returns content only) vs write (persist files); ensures cmake_minimum_required + project() header; unknown flags passed through in target options; unmappable constructs record UnknownConstruct (toolchain_specific/other) without hard-failing unless severity=ERROR.
-7) DiagnosticsReporter aggregates diagnostics from all stages; prints console summary (including count of unknown constructs); when --report is set writes JSON report to output-dir/report.json containing diagnostics and unknown_constructs plus Markdown summary; conversion exit code non-zero on ERROR diagnostics.
+7) DiagnosticsReporter aggregates diagnostics from all stages; prints console summary (including count of unknown constructs); when --report is set writes JSON report to output-dir/report.json containing diagnostics, unknown_constructs, and introspection summary (enabled flag, validated/modified counts, mismatches/failures) plus Markdown summary; conversion exit code non-zero on ERROR diagnostics (introspection warnings remain WARN-only).
 </flow>
 <contracts>
 - Each component exposes pure data contracts (see components/*/SPEC.md) with typed inputs/outputs and explicit error handling; no component may mutate shared global state.

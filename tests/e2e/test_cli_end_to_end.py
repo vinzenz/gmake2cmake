@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from gmake2cmake import cli
 
@@ -61,3 +64,49 @@ def test_ts25_global_vs_target_flags(tmp_path):
     _assert_matches(output / "CMakeLists.txt", "ts25-flags", "CMakeLists.txt")
     _assert_matches(output / "ProjectGlobalConfig.cmake", "ts25-flags", "ProjectGlobalConfig.cmake")
     _assert_matches(output / "src/CMakeLists.txt", "ts25-flags", "src_CMakeLists.txt")
+
+
+def test_report_includes_introspection_summary(tmp_path):
+    fixture = Path("tests/e2e/fixtures") / "ts21-global"
+    output = tmp_path / "report-ts21"
+    argv = [
+        "--source-dir",
+        str(fixture),
+        "--config",
+        str(fixture / "config.yaml"),
+        "--output-dir",
+        str(output),
+        "--report",
+        "--dry-run",
+    ]
+    exit_code = cli.run(argv)
+    assert exit_code == 0
+
+    payload = json.loads((output / "report.json").read_text())
+    assert "introspection" in payload
+    assert payload["introspection"]["introspection_enabled"] is False
+
+
+def test_report_includes_introspection_when_enabled(tmp_path):
+    if not cli._make_in_path():
+        pytest.skip("GNU make is required for introspection")
+
+    fixture = Path("tests/e2e/fixtures") / "ts21-global"
+    output = tmp_path / "report-ts21-introspection"
+    argv = [
+        "--source-dir",
+        str(fixture),
+        "--config",
+        str(fixture / "config.yaml"),
+        "--output-dir",
+        str(output),
+        "--report",
+        "--dry-run",
+        "--use-make-introspection",
+    ]
+    exit_code = cli.run(argv)
+    assert exit_code == 0
+
+    payload = json.loads((output / "report.json").read_text())
+    assert payload["introspection"]["introspection_enabled"] is True
+    assert "targets_total" in payload["introspection"]
