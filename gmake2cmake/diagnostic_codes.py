@@ -97,6 +97,7 @@ class DiagnosticCode(str, Enum):
     CONFIG_TOO_LARGE = "CONFIG_TOO_LARGE"
     INTROSPECTION_TIMEOUT = "INTROSPECTION_TIMEOUT"
     INTROSPECTION_FAILED = "INTROSPECTION_FAILED"
+    INTROSPECTION_MISMATCH = "INTROSPECTION_MISMATCH"
 
 
 # Metadata registry for all diagnostic codes
@@ -355,6 +356,12 @@ _METADATA_REGISTRY: dict[str, DiagnosticMetadata] = {
         category="INTROSPECTION",
         default_severity="WARN",
         description="GNU make introspection failed",
+    ),
+    "INTROSPECTION_MISMATCH": DiagnosticMetadata(
+        code="INTROSPECTION_MISMATCH",
+        category="INTROSPECTION",
+        default_severity="WARN",
+        description="Differences found between static analysis and introspection",
     ),
 }
 

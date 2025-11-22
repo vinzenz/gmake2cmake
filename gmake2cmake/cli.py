@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional, TextIO
 
 from gmake2cmake import config as config_module
-from gmake2cmake import introspection
+from gmake2cmake import introspection, introspection_parser, introspection_reconcile
 from gmake2cmake.cmake import emitter as cmake_emitter
 from gmake2cmake.constants import (
     DEFAULT_OUTPUT_DIR,
@@ -445,7 +445,11 @@ def _evaluate_file(content, ctx: RunContext):
 
 def _build_ir(facts, ctx: RunContext):
     with log_timed_block("build", verbosity=ctx.args.verbose):
-        return ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
+        result = ir_builder.build_project(facts, ctx.config, ctx.diagnostics)
+    if ctx.introspection_dump:
+        data = introspection_parser.parse_dump(ctx.introspection_dump)
+        result.project = introspection_reconcile.reconcile(result.project, data, ctx.diagnostics)
+    return result
 
 
 def _emit_targets(path: str, ir_result, ctx: RunContext) -> None:

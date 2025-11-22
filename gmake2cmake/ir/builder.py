@@ -56,6 +56,9 @@ class Target:
     deps: List[str]
     custom_commands: List[CustomCommand] = field(default_factory=list)
     visibility: Optional[str] = None
+    introspection_commands: List[str] = field(default_factory=list)
+    validated_by_introspection: bool = False
+    origin: str = "static"
 
     def __post_init__(self) -> None:
         if not self.artifact or not self.artifact.strip():
