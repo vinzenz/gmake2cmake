@@ -198,4 +198,5 @@ Acting as the Software Architect of gmake2cmake who wrote all specifications in 
 - Validate downstream consumers handle the new `line` field in `report.json`; update tooling if it assumes the old schema.
 - Keep introspection flag opt-in and verify diagnostics are clear when make is missing.
 - Consider expanding introspection parser coverage to pattern rules and linking commands once basic dump parsing is in place.
+- Use the reconciliation results to drive reporting/metrics once TASK-0076 hooks are added.
 </todos>
