@@ -15,7 +15,7 @@ argv
 - **Inputs**: `argv`, `FileSystemAdapter`, optional `clock`. Consumes merged `ConfigModel` from ConfigManager.
 - **Outputs**: Exit code; console diagnostics; optional JSON report file; generated CMake files (unless dry-run).
 - **Behavior details**:
-  - Recognizes: `--source-dir`, `-f/--entry-makefile`, `--output-dir`, `--config`, `--dry-run`, `--report`, `--with-packaging`, verbosity, strict, processes.
+  - Recognizes: `--source-dir`, `-f/--entry-makefile`, `--output-dir`, `--config`, `--dry-run`, `--report`, `--with-packaging`, `--use-make-introspection`, verbosity, strict, processes.
   - Short-circuits pipeline when fatal diagnostics appear before emission.
   - Passes `EmitOptions` (dry_run, packaging, namespace) to CMakeEmitter; ensures diagnostics collector is shared end-to-end.
   - Never calls `sys.exit`; returns int.
